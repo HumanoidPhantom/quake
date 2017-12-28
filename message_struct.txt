@@ -1,0 +1,13 @@
+Block structure
+{
+    "index": 0,
+    "timestamp": 0000000000.000000,
+    "transactions": [
+        {
+            "sender" : "",
+            "receiver": "",
+            "amount": "",
+        },
+    ],
+    "previous_hash": ""
+}
