@@ -40,6 +40,9 @@ class Peer(object):
     def receive_basket(self):
         pass
 
+    def check_voting_round_status(self):
+        pass
+
     def check_signs(self):
         pass
 
