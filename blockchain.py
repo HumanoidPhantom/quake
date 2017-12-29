@@ -41,7 +41,7 @@ class Blockchain(object):
         """
 
         self.current_transactions.append({
-            'senter': sender,
+            'sender': sender,
             'recipient': recipient,
             'amount': amount,
         })
@@ -63,3 +63,5 @@ class Blockchain(object):
     @property
     def last_block(self):
         return self.chain[-1]
+
+
