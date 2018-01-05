@@ -71,6 +71,7 @@ if __name__ == '__main__':
     parser.add_argument('-H', '--host', default='127.0.0.1', type=str, help='host or url')
     parser.add_argument('-p', '--port', default=5000, type=int, help='port to listen on')
     args = parser.parse_args()
+    host = args.host
     port = args.port
 
-    app.run(host='0.0.0.0', port=port)
+    app.run(host=host, port=port)
