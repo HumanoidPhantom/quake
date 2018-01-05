@@ -13,10 +13,10 @@ def main():
                 if host == 'exit':
                     continue
                 elif len(host) == 0:
-                    print 'Try again'
+                    print('Try again')
                     continue
                 elif host == 'exit':
-                    print 'Bye-bye\n', False
+                    print('Bye-bye\n')
                     sys.exit()
                 else:
                     continue
@@ -27,11 +27,11 @@ def main():
             if port == 'back':
                 continue
             elif len(port) == 0:
-                print 'Try again'
+                print('Try again')
                 change_host = False
                 continue
             elif not port.isdigit() or int(port) < 1 or int(port) > 65535:
-                print 'Wrong value'
+                print('Wrong value')
                 change_host = False
                 continue
 
