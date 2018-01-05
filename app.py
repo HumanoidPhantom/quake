@@ -1,5 +1,11 @@
 import sys
 from quake import Quake
+from blockchain import Blockchain
+from uuid import uuid4
+
+import requests
+from flask import Flask, jsonify, request
+
 
 def main():
     def get_connection_info():
@@ -44,5 +50,27 @@ def main():
         break
 
 
+app = Flask(__name__)
+
+node_identifier = str(uuid4()).replace('-', '')
+blockchain = Blockchain()
+
+
+@app.route('/nodes', methods=['GET'])
+def nodes():
+    # Get the list of peers
+    response = ['hello', 'there']
+
+    return jsonify(response), 200
+
+
 if __name__ == '__main__':
-    main()
+    from argparse import ArgumentParser
+
+    parser = ArgumentParser()
+    parser.add_argument('-H', '--host', default='127.0.0.1', type=str, help='host or url')
+    parser.add_argument('-p', '--port', default=5000, type=int, help='port to listen on')
+    args = parser.parse_args()
+    port = args.port
+
+    app.run(host='0.0.0.0', port=port)

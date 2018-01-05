@@ -1,7 +1,6 @@
 import json
 
 
-
 class Peer(object):
 
     def __init__(self, neighbours_number=4):
