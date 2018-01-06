@@ -5,12 +5,16 @@ from uuid import uuid4
 import hashlib
 import json
 from operator import itemgetter
+import threading
 
 import requests
 from flask import Flask, jsonify, request
 
 
 class Quake:
+    BASKET_SEND_TIME = 20  # sec
+    BASKET_SIZE = 20  # txs
+
     def __init__(self, neighbors=4):
         self.host = ''
         self.__port = ''
@@ -25,6 +29,9 @@ class Quake:
         self.neighbors_list = []
 
         self.update_data()
+
+        self.tx_basket = []
+        self.send_basket_timer = threading.Timer(quake.BASKET_SEND_TIME, self.check_tx_basket).start()
 
     @property
     def port(self):
@@ -60,6 +67,18 @@ class Quake:
         node_hash = self.generate_node_hash(identity['pubkey'], identity['node_host'], identity['node_port'])
 
         return node_hash == identity['hash']
+
+    def check_tx_basket(self):
+        if len(self.tx_basket) >= Quake.BASKET_SIZE:
+            self.send_tx_basket()
+
+    def send_tx_basket(self):
+        self.send_basket_timer.cancel()
+        self.send_basket_timer = threading.Timer(Quake.BASKET_SEND_TIME, self.check_tx_basket)
+        self.send_basket_timer.start()
+
+
+
 
 
 app = Flask(__name__)
