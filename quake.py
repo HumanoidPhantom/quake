@@ -6,6 +6,7 @@ import hashlib
 import json
 from operator import itemgetter
 import threading
+import atexit
 
 import requests
 from flask import Flask, jsonify, request
@@ -16,6 +17,8 @@ class Quake:
     BASKET_SIZE = 20  # txs
 
     def __init__(self, neighbors=4):
+        self.valid_node = True
+
         self.host = ''
         self.__port = ''
         self.neighbors = neighbors
@@ -31,7 +34,8 @@ class Quake:
         self.update_data()
 
         self.tx_basket = []
-        self.send_basket_timer = threading.Timer(quake.BASKET_SEND_TIME, self.check_tx_basket).start()
+        self.failed_tx = []
+        self.send_basket_timer = threading.Timer(Quake.BASKET_SEND_TIME, self.check_tx_basket).start()
 
     @property
     def port(self):
@@ -49,7 +53,10 @@ class Quake:
                 self.blockchain.chain = response.json()['chain']
 
     def generate_node_hash(self, pubkey, node_host, node_port):
-        return hashlib.sha256('%s%s%s' % (pubkey, self.host, self.port))
+        return hashlib.sha256(('%s%s%s' % (pubkey, node_host, node_port)).encode())
+
+    def generate_tx_hash(self, new_tx):
+        return hashlib.sha256(('%s%s%s%s' % (new_tx['sender'], new_tx['receiver'], new_tx['amount'], new_tx['sequence'])))
 
     def generate_identity(self):
         pubkey = self.key.publickey()
@@ -77,8 +84,27 @@ class Quake:
         self.send_basket_timer = threading.Timer(Quake.BASKET_SEND_TIME, self.check_tx_basket)
         self.send_basket_timer.start()
 
+        data = {
+            'txs': self.tx_basket,
+        }
 
+    def check_tx(self, tx):
+        # Check transaction (check signs and validate tx)
 
+        response = True
+        return response if self.valid_node else not response
+
+    def add_to_tx_basket(self, new_tx):
+        tx_hash = self.generate_tx_hash(new_tx)
+        signature = self.key.sign(tx_hash)
+
+        if 'signatures' not in new_tx:
+            new_tx['signatures'] = []
+        new_tx['signatures'].append({
+            'node': self.identity['hash'],
+            'signature': signature
+        })
+        self.tx_basket.append(tx)
 
 
 app = Flask(__name__)
@@ -107,18 +133,28 @@ def tx():
     # Tx from client
     values = request.get_json()
 
-    required = ['sender', 'receiver', 'amount']
+    required = ['sender', 'receiver', 'amount', 'sequence']
 
     check_result = check_required(required, values)
     if check_result != -1:
         return check_result
 
-    index = quake.blockchain.new_transaction(values['sender'], values['receiver'], values['amount'])
-
-    response = {
-        'message': 'Transaction will be added to Block %s' % index,
+    #  quake.blockchain.new_transaction(values['sender'], values['receiver'], values['amount'])
+    tx = {
+        'sender': values['sender'],
+        'receiver': values['receiver'],
+        'amount': values['amount'],
+        'sequence': values['sequence']
     }
-    return jsonify(response), 200
+
+    if quake.check_tx(tx):
+        quake.add_to_tx_basket(tx)
+    else:
+        quake.failed_tx.append(tx)
+
+    quake.check_tx_basket()
+
+    return 'OK', 200
 
 
 @app.route('/neighbor', methods=['POST'])
@@ -131,13 +167,18 @@ def neighbor():
     if check_result != -1:
         return check_result
 
-
-
     response = {}
     return jsonify(response), 200
 
 
-if __name__ == '__main__':
+@app.route('/txs/basket', methods=['POST'])
+def txs_basket():
+    values = request.get_json()
+
+    return 'OK', 200
+
+
+def main():
     from argparse import ArgumentParser
 
     parser = ArgumentParser()
@@ -150,6 +191,8 @@ if __name__ == '__main__':
 
     parser.add_argument('-n', '--neighbors', default=4, type=int, help='set the number of neighbors')
 
+    parser.add_argument('-nv', '--non_valid_node', help="Emulate non-valid node", action="store_true")
+
     args = parser.parse_args()
     connect_host = args.connect_to_host
     connect_port = args.connect_to_port
@@ -159,8 +202,14 @@ if __name__ == '__main__':
 
     quake.neighbors = args.neighbors
 
+    quake.valid_node = not args.non_valid_node
+
     quake.nodes = connect_host
     quake.port = connect_port
     quake.update_data()
 
     app.run(host=host, port=port)
+
+
+if __name__ == '__main__':
+    main()
