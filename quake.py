@@ -15,6 +15,7 @@ from flask import Flask, jsonify, request
 class Quake:
     BASKET_SEND_TIME = 20  # sec
     BASKET_SIZE = 20  # txs
+    MAX_FAILED_TX_ATTEMPTS = 3
 
     def __init__(self, neighbors=4):
         self.valid_node = True
@@ -59,7 +60,7 @@ class Quake:
         return hashlib.sha256(('%s%s%s%s' % (new_tx['sender'], new_tx['receiver'], new_tx['amount'], new_tx['sequence'])))
 
     def generate_identity(self):
-        pubkey = self.key.publickey()
+        pubkey = self.key.publickey().exportKey()
         node_hash = self.generate_node_hash(pubkey, self.host, self.port)
         return {
             'hash': node_hash,
@@ -84,27 +85,65 @@ class Quake:
         self.send_basket_timer = threading.Timer(Quake.BASKET_SEND_TIME, self.check_tx_basket)
         self.send_basket_timer.start()
 
-        data = {
+        txs_data = {
+            'node': self.identity['hash'],
             'txs': self.tx_basket,
         }
 
-    def check_tx(self, tx):
-        # Check transaction (check signs and validate tx)
+        for node in self.neighbors_list:
+            requests.post('http://%s/txs/basket' % node['address'], data=txs_data)
 
-        response = True
+    def verify_signature(self, pubkey, signature, tx_hash):
+        key = RSA.importKey(pubkey)
+        return key.verify(tx_hash, signature)
+
+    def find_node(self, hash):
+        nodes = [item for item in self.nodes if item['hash'] == hash]
+        if len(nodes):
+            return nodes[0]
+
+        return None
+
+    def check_signatures(self, new_tx):
+        tx_hash = self.generate_tx_hash(new_tx)
+        result = True
+        for item in new_tx['signatures']:
+            node = self.find_node(item['node'])
+            if not node:
+                continue
+
+            result &= self.verify_signature(node['pubkey'], item['signature'], tx_hash)
+
+        return result
+
+    def check_tx(self, new_tx):
+        response = False
+
+        if 'signatures' not in new_tx:
+            new_tx['signatures'] = []
+
+        new_tx['signatures'].append({
+            'node': new_tx['node'],
+            'signature': new_tx['cur_signature']
+        })
+
+        if self.check_signatures(new_tx):
+            # some additional verifications
+            response = True
+
         return response if self.valid_node else not response
 
     def add_to_tx_basket(self, new_tx):
         tx_hash = self.generate_tx_hash(new_tx)
         signature = self.key.sign(tx_hash)
 
-        if 'signatures' not in new_tx:
-            new_tx['signatures'] = []
-        new_tx['signatures'].append({
-            'node': self.identity['hash'],
-            'signature': signature
-        })
+        new_tx['cur_signature'] = signature
+
         self.tx_basket.append(tx)
+
+    def add_to_failed_list(self, new_tx):
+        new_tx['attempt'] = 0
+        self.failed_tx.append(new_tx)
 
 
 app = Flask(__name__)
@@ -139,20 +178,18 @@ def tx():
     if check_result != -1:
         return check_result
 
-    #  quake.blockchain.new_transaction(values['sender'], values['receiver'], values['amount'])
-    tx = {
+    new_tx = {
         'sender': values['sender'],
         'receiver': values['receiver'],
         'amount': values['amount'],
         'sequence': values['sequence']
     }
 
-    if quake.check_tx(tx):
-        quake.add_to_tx_basket(tx)
+    if quake.check_tx(new_tx):
+        quake.add_to_tx_basket(new_tx)
+        quake.check_tx_basket()
     else:
-        quake.failed_tx.append(tx)
-
-    quake.check_tx_basket()
+        quake.add_to_failed_list(new_tx)
 
     return 'OK', 200
 
@@ -174,6 +211,19 @@ def neighbor():
 @app.route('/txs/basket', methods=['POST'])
 def txs_basket():
     values = request.get_json()
+
+    required = ['node', 'txs']
+    check_result = check_required(required, values)
+    if check_result != -1:
+        return check_result
+
+    for new_tx in values['txs']:
+        if quake.check_tx(new_tx):
+            quake.add_to_tx_basket(new_tx)
+        else:
+            quake.add_to_failed_list(new_tx)
+
+    quake.check_tx_basket()
 
     return 'OK', 200
 
