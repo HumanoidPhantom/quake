@@ -120,7 +120,11 @@ class mainNei:
 	#else:
 	#	pass
 
-
+	def nanUnl(self, code_request):
+		if code_request == 1:
+			return dic_neighbours
+		elif code_request == 2:
+			return dic_network_node
 
 	def main(self,conn,addr):
 
@@ -211,6 +215,7 @@ class mainNei:
 			i = i + 1
 		serversocket.close()
 
+mainNei = mainNei()
 th_main = threading.Thread(target=mainNei.listen, args = (port,) )
 th_main.start()
 
