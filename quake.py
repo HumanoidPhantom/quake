@@ -53,15 +53,15 @@ class Quake:
                 self.nodes = response.json()['nodes']
                 self.blockchain.chain = response.json()['chain']
 
-    def generate_node_hash(self, pubkey, node_host, node_port):
-        return hashlib.sha256(('%s%s%s' % (pubkey, node_host, node_port)).encode())
+    def generate_node_hash(self, pubkey):
+        return hashlib.sha256(('%s%s%s' % (pubkey, self.host, self.port)).encode())
 
     def generate_tx_hash(self, new_tx):
         return hashlib.sha256(('%s%s%s%s' % (new_tx['sender'], new_tx['receiver'], new_tx['amount'], new_tx['sequence'])))
 
     def generate_identity(self):
         pubkey = self.key.publickey().exportKey()
-        node_hash = self.generate_node_hash(pubkey, self.host, self.port)
+        node_hash = self.generate_node_hash(pubkey)
         return {
             'hash': node_hash,
             'pubkey': pubkey,
@@ -72,7 +72,8 @@ class Quake:
         self.nodes = sorted(self.nodes, key=itemgetter('hash'))
 
     def check_hash(self, identity):
-        node_hash = self.generate_node_hash(identity['pubkey'], identity['node_host'], identity['node_port'])
+        # fix
+        node_hash = self.generate_node_hash(identity['pubkey'])
 
         return node_hash == identity['hash']
 
