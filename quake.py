@@ -36,7 +36,11 @@ class Quake:
 
         self.tx_basket = []
         self.failed_tx = []
-        self.send_basket_timer = threading.Timer(Quake.BASKET_SEND_TIME, self.check_tx_basket).start()
+        self.valid_tx = {}
+
+        self.send_basket_timer = threading.Timer(Quake.BASKET_SEND_TIME, self.check_tx_basket)
+        self.send_basket_timer.daemon = True
+        self.send_basket_timer.start()
 
     @property
     def port(self):
@@ -77,16 +81,16 @@ class Quake:
 
         return node_hash == identity['hash']
 
-    def check_tx_basket(self):
-        if len(self.tx_basket) >= Quake.BASKET_SIZE:
-            self.send_own_tx_basket()
+    def check_tx_basket(self, by_timer=True):
+        if not by_timer and len(self.tx_basket) < Quake.BASKET_SIZE:
+            return
 
-    def send_own_tx_basket(self):
         self.send_basket_timer.cancel()
         self.send_basket_timer = threading.Timer(Quake.BASKET_SEND_TIME, self.check_tx_basket)
+        self.send_basket_timer.daemon = True
         self.send_basket_timer.start()
 
-        self.send_tx_basket(self.tx_basket)
+        threading.Thread(target=send_tx_basket, args=(self.neighbors_list, self.tx_basket, self.identity['hash']))
 
     def verify_signature(self, pubkey, signature, tx_hash):
         key = RSA.importKey(pubkey)
@@ -138,35 +142,42 @@ class Quake:
 
         return response, new_tx
 
-    def add_to_tx_basket(self, new_tx):
+    def add_to_tx_list(self, new_tx, from_client=False):
         tx_hash = self.generate_tx_hash(new_tx)
         new_tx['hash'] = tx_hash
         signature = self.key.sign(tx_hash)
 
-        tx_index = self.find_tx(tx_hash)
-        if tx_index == -1:
-            new_tx['cur_signature'] = signature
-            self.tx_basket.append(tx)
-        else:
+        if tx_hash in self.valid_tx:
             new_tx['signatures'] += \
-                [item for item in self.tx_basket[tx_index]['signatures'] if item not in new_tx['signatures']]
+                [item for item in self.valid_tx[tx_hash]['signatures'] if item not in new_tx['signatures']]
+
+        new_tx['cur_signature'] = signature
+
+        self.valid_tx[tx_hash] = new_tx
+
+        if from_client:
+            tx_index = self.find_tx(tx_hash)
+            if tx_index == -1:
+                self.tx_basket.append(tx)
+
+        return new_tx
 
     def add_to_failed_list(self, new_tx):
         new_tx['attempt'] = 0
         self.failed_tx.append(new_tx)
 
     def handle_tx_basket(self, tx_basket):
-        required = ['node', 'txs']
-        check_result = check_required(required, tx_basket)
-        if check_result != -1:
-            return check_result
-
+        updated_tx_basket = []
         for new_tx in tx_basket['txs']:
             checked_tx = quake.check_tx(new_tx)
             if checked_tx[0]:
-                quake.add_to_tx_basket(checked_tx[1])
+                tmp_tx = quake.add_to_tx_list(checked_tx[1])
+                updated_tx_basket.append(tmp_tx)
             else:
                 quake.add_to_failed_list(checked_tx[1])
+
+        if updated_tx_basket:
+            send_tx_basket(self.identity['hash'], updated_tx_basket, self.neighbors_list)
 
 
 app = Flask(__name__)
@@ -182,7 +193,7 @@ def check_required(required, received):
     return -1
 
 
-def send_tx_basket(self, node_hash, basket, neighbors):
+def send_tx_basket(node_hash, basket, neighbors):
     txs_data = {
         'node': node_hash,
         'txs': basket,
@@ -225,8 +236,8 @@ def tx():
 
     checked_tx = quake.check_tx(new_tx)
     if checked_tx[0]:
-        quake.add_to_tx_basket(checked_tx[1])
-        quake.check_tx_basket()
+        quake.add_to_tx_list(checked_tx[1])
+        quake.check_tx_basket(by_timer=False)
     else:
         quake.add_to_failed_list(checked_tx[1])
 
@@ -251,13 +262,17 @@ def neighbor():
 def txs_basket():
     values = request.get_json()
 
-    quake.handle_tx_basket(values)
-    quake.check_tx_basket()
+    required = ['node', 'txs']
+    check_result = check_required(required, values)
+    if check_result != -1:
+        return check_result
 
     response = {
         'node': quake.identity['hash'],
-        'txs': quake.tx_basket,
+        'txs': quake.valid_tx.values(),
     }
+
+    threading.Thread(target=quake.handle_tx_basket, args=(values, ))
 
     return jsonify(response), 200
 
