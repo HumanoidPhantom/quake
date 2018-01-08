@@ -265,6 +265,7 @@ def main():
 
     parser.add_argument('-H', '--host', default='127.0.0.1', type=str, help='ip or url')
     parser.add_argument('-p', '--port', default=5000, type=int, help='port to listen on')
+    parser.add_argument('-sp', '--socket-port', default=50000, type=int, help='port for socket to listen on')
 
     parser.add_argument('-cH', '--connect_to_host', type=str, help='host to connect to')
     parser.add_argument('-cp', '--connect_to_port', type=int, help='port to connect to')
