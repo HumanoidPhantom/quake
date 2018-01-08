@@ -79,25 +79,14 @@ class Quake:
 
     def check_tx_basket(self):
         if len(self.tx_basket) >= Quake.BASKET_SIZE:
-            self.send_tx_basket()
+            self.send_own_tx_basket()
 
-    def send_tx_basket(self):
+    def send_own_tx_basket(self):
         self.send_basket_timer.cancel()
         self.send_basket_timer = threading.Timer(Quake.BASKET_SEND_TIME, self.check_tx_basket)
         self.send_basket_timer.start()
 
-        txs_data = {
-            'node': self.identity['hash'],
-            'txs': self.tx_basket,
-        }
-
-        for node in self.neighbors_list:
-            response = requests.post('http://%s/txs/basket' % node['address'], data=txs_data)
-
-            if response.status_code == 200:
-                self.handle_tx_basket(response.text)
-
-        self.check_tx_basket()
+        self.send_tx_basket(self.tx_basket)
 
     def verify_signature(self, pubkey, signature, tx_hash):
         key = RSA.importKey(pubkey)
@@ -191,6 +180,21 @@ def check_required(required, received):
     if not all(k in received for k in required):
         return 'Missing values', 400
     return -1
+
+
+def send_tx_basket(self, node_hash, basket, neighbors):
+    txs_data = {
+        'node': node_hash,
+        'txs': basket,
+    }
+
+    for node in neighbors:
+        response = requests.post('http://%s/txs/basket' % node['address'], data=txs_data)
+
+        # if response.status_code == 200:
+        #     self.handle_tx_basket(response.text)
+
+    # self.check_tx_basket()
 
 
 @app.route('/data', methods=['GET'])
