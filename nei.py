@@ -19,7 +19,7 @@ class NaN:
 	def connectRequestUpload (conn,publicKey,dic_network_node):
 
 		msg = {'object':'node',
-			   'hashKey':str(publicKey),
+			   'hashKey':publicKey,
 			   'action':'connect_fullList',
 			   'data':dic_network_node
 			   }
@@ -30,7 +30,7 @@ class NaN:
 	def connectRequestDownload(ip_request_node, port_request_node, publicKey):
 
 		msg_send = {'object':'node',
-					'hashKey':str(publicKey),
+					'hashKey':publicKey,
 					'action':'connect',
 					'data':'empty'}
 		msg_send = json.dumps(msg_send).encode()
@@ -53,7 +53,7 @@ class NaN:
 	def updateLun(node_id,info,publicKey,dic_neighbours,list_neighbours):
 
 		msg = {'object':'node',
-			   'hashKey':str(publicKey),
+			   'hashKey':publicKey,
 			   'action':'update_lun',
 			   'data':[node_id,info[0],info[1]]
 			   }
@@ -74,7 +74,7 @@ class NaN:
 
 		while True:
 			index = random.randint(0,len(list_network_node)-1)
-			if index == list_network_node.index(str(publicKey)):
+			if index == list_network_node.index(publicKey):
 				
 				print ('SHIT!')
 			else:
@@ -86,7 +86,7 @@ class NaN:
 		msg = {'object':'node',
 			   'hashKey':str(publicKey),
 			   'action':'request_Nei',
-			   'data':dic_network_node[str(publicKey)]}
+			   'data':dic_network_node[publicKey]}
 		msg = json.dumps(msg).encode()
 		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		s.connect((host_node,port_node))
@@ -116,7 +116,7 @@ class NaN:
 
 		if len(list_neighbours) < 10:
 			msg_send = {'object':'node',
-				   'hashKey':str(publicKey),
+				   'hashKey':publicKey,
 				   'action':'request_Nei',
 				   'data':'Yes'}
 			msg_send = json.dumps(msg_send).encode()
@@ -125,7 +125,7 @@ class NaN:
 
 		else:
 			msg_send = {'object':'node',
-					   	'hashKey':str(publicKey),
+					   	'hashKey':publicKey,
 					    'action':'request_Nei',
 					    'data':'No'}
 			msg_send = json.dumps(msg_send).encode()
