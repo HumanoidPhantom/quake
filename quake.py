@@ -91,18 +91,31 @@ class Quake:
         }
 
         for node in self.neighbors_list:
-            requests.post('http://%s/txs/basket' % node['address'], data=txs_data)
+            response = requests.post('http://%s/txs/basket' % node['address'], data=txs_data)
+
+            if response.status_code == 200:
+                self.handle_tx_basket(response.text)
+
+        self.check_tx_basket()
 
     def verify_signature(self, pubkey, signature, tx_hash):
         key = RSA.importKey(pubkey)
         return key.verify(tx_hash, signature)
 
-    def find_node(self, hash):
-        nodes = [item for item in self.nodes if item['hash'] == hash]
+    def find_node(self, node_hash):
+        nodes = [item for item in self.nodes if item['hash'] == node_hash]
         if len(nodes):
             return nodes[0]
 
         return None
+
+    def find_tx(self, tx_hash):
+        txs = [index for index in range(len(self.tx_basket)) if self.tx_basket[index]['hash'] == tx_hash]
+
+        if len(txs):
+            return txs[0]
+
+        return -1
 
     def check_signatures(self, new_tx):
         tx_hash = self.generate_tx_hash(new_tx)
@@ -131,19 +144,39 @@ class Quake:
             # some additional verifications
             response = True
 
-        return response if self.valid_node else not response
+        response = response if self.valid_node else not response
+
+        return response, new_tx
 
     def add_to_tx_basket(self, new_tx):
         tx_hash = self.generate_tx_hash(new_tx)
+        new_tx['hash'] = tx_hash
         signature = self.key.sign(tx_hash)
 
-        new_tx['cur_signature'] = signature
-
-        self.tx_basket.append(tx)
+        tx_index = self.find_tx(tx_hash)
+        if tx_index == -1:
+            new_tx['cur_signature'] = signature
+            self.tx_basket.append(tx)
+        else:
+            new_tx['signatures'] += \
+                [item for item in self.tx_basket[tx_index]['signatures'] if item not in new_tx['signatures']]
 
     def add_to_failed_list(self, new_tx):
         new_tx['attempt'] = 0
         self.failed_tx.append(new_tx)
+
+    def handle_tx_basket(self, tx_basket):
+        required = ['node', 'txs']
+        check_result = check_required(required, tx_basket)
+        if check_result != -1:
+            return check_result
+
+        for new_tx in tx_basket['txs']:
+            checked_tx = quake.check_tx(new_tx)
+            if checked_tx[0]:
+                quake.add_to_tx_basket(checked_tx[1])
+            else:
+                quake.add_to_failed_list(checked_tx[1])
 
 
 app = Flask(__name__)
@@ -185,11 +218,12 @@ def tx():
         'sequence': values['sequence']
     }
 
-    if quake.check_tx(new_tx):
-        quake.add_to_tx_basket(new_tx)
+    checked_tx = quake.check_tx(new_tx)
+    if checked_tx[0]:
+        quake.add_to_tx_basket(checked_tx[1])
         quake.check_tx_basket()
     else:
-        quake.add_to_failed_list(new_tx)
+        quake.add_to_failed_list(checked_tx[1])
 
     return 'OK', 200
 
@@ -212,20 +246,15 @@ def neighbor():
 def txs_basket():
     values = request.get_json()
 
-    required = ['node', 'txs']
-    check_result = check_required(required, values)
-    if check_result != -1:
-        return check_result
-
-    for new_tx in values['txs']:
-        if quake.check_tx(new_tx):
-            quake.add_to_tx_basket(new_tx)
-        else:
-            quake.add_to_failed_list(new_tx)
-
+    quake.handle_tx_basket(values)
     quake.check_tx_basket()
 
-    return 'OK', 200
+    response = {
+        'node': quake.identity['hash'],
+        'txs': quake.tx_basket,
+    }
+
+    return jsonify(response), 200
 
 
 def main():
