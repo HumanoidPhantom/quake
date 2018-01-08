@@ -38,6 +38,8 @@ class Quake:
         self.failed_tx = []
         self.valid_tx = {}
 
+        self.voted_tx = []
+
         self.send_basket_timer = threading.Timer(Quake.BASKET_SEND_TIME, self.check_tx_basket)
         self.send_basket_timer.daemon = True
         self.send_basket_timer.start()
@@ -146,12 +148,16 @@ class Quake:
         tx_hash = self.generate_tx_hash(new_tx)
         new_tx['hash'] = tx_hash
         signature = self.key.sign(tx_hash)
-
+        is_new = True
         if tx_hash in self.valid_tx:
+            is_new = False
             new_tx['signatures'] += \
                 [item for item in self.valid_tx[tx_hash]['signatures'] if item not in new_tx['signatures']]
 
         new_tx['cur_signature'] = signature
+
+        if len(new_tx['signatures']) / len(self.nodes) > 2/3:
+            self.voted_tx.append(tx_hash)
 
         self.valid_tx[tx_hash] = new_tx
 
@@ -160,24 +166,41 @@ class Quake:
             if tx_index == -1:
                 self.tx_basket.append(tx)
 
-        return new_tx
+        return is_new, new_tx
 
     def add_to_failed_list(self, new_tx):
         new_tx['attempt'] = 0
         self.failed_tx.append(new_tx)
 
     def handle_tx_basket(self, tx_basket):
-        updated_tx_basket = []
+        updated_tx_basket_new = []
+        updated_tx_basket_seen = []
         for new_tx in tx_basket['txs']:
             checked_tx = quake.check_tx(new_tx)
             if checked_tx[0]:
-                tmp_tx = quake.add_to_tx_list(checked_tx[1])
-                updated_tx_basket.append(tmp_tx)
+                is_new, tmp_tx = quake.add_to_tx_list(checked_tx[1])
+                if is_new:
+                    updated_tx_basket_seen.append(tmp_tx)
+                else:
+                    updated_tx_basket_new.append(tmp_tx)
             else:
                 quake.add_to_failed_list(checked_tx[1])
 
-        if updated_tx_basket:
-            send_tx_basket(self.identity['hash'], updated_tx_basket, self.neighbors_list)
+        if updated_tx_basket_new:
+            send_tx_basket(self.identity['hash'], updated_tx_basket_new, self.neighbors_list)
+
+        if updated_tx_basket_seen:
+            nghbrs = [item for item in self.neighbors_list if item['hash'] != tx_basket['node']]
+            send_tx_basket(self.identity['hash'], updated_tx_basket_new, nghbrs)
+
+    def request_tx_by_hash(self, tx_hash):
+        for nbr in self.neighbors_list:
+            response = requests.get('http://%s/tx/info' % nbr['address'], params={'hash': tx_hash})
+            if response.status_code != 200:
+                continue
+
+            return json.loads(response.text)
+        return {}
 
 
 app = Flask(__name__)
@@ -202,10 +225,14 @@ def send_tx_basket(node_hash, basket, neighbors):
     for node in neighbors:
         response = requests.post('http://%s/txs/basket' % node['address'], data=txs_data)
 
-        # if response.status_code == 200:
-        #     self.handle_tx_basket(response.text)
-
-    # self.check_tx_basket()
+        if response.status_code == 200:
+            txs = json.loads(response.text)
+            for new_tx in txs:
+                checked_tx = quake.check_tx(new_tx)
+                if checked_tx[0]:
+                    quake.add_to_tx_list(checked_tx[1])
+                else:
+                    quake.add_to_failed_list(checked_tx[1])
 
 
 @app.route('/data', methods=['GET'])
@@ -275,6 +302,22 @@ def txs_basket():
     threading.Thread(target=quake.handle_tx_basket, args=(values, ))
 
     return jsonify(response), 200
+
+
+@app.route('/tx/info')
+def tx_info():
+    values = request.get_json()
+
+    required = ['hash']
+    check_result = check_required(required, values)
+    if check_result != -1:
+        return check_result
+
+    if values['hash'] in quake.voted_tx:
+        response = quake.voted_tx[values['hash']]
+        return jsonify(response), 200
+
+    return 'Not found', 404
 
 
 def main():
