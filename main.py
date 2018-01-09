@@ -242,5 +242,5 @@ def run():
 
 
 if __name__ == '__main__':
-	port = 50001
+	port = sys.argv[1]
 	run()
