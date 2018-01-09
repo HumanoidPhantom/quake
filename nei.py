@@ -55,7 +55,8 @@ class NaN:
 			else:
 				s.close()
 		except  OSError as err:
-			print("OS error {1}: {0}".format(err,port_request_node))
+			#print("OS error {1}: {0}".format(err,port_request_node))
+			pass
 
 		except ConnectionRefusedError:
 			of = open('log_{0}'.format(publicKey),'a')
@@ -82,7 +83,8 @@ class NaN:
 				ss.send(msg)
 				ss.close()
 			except  OSError as err:
-				print("OS error {1}: {0}".format(err,port))
+				#print("OS error {1}: {0}".format(err,port))
+				pass
 
 			except ConnectionRefusedError:
 				of = open('log_{0}'.format(publicKey),'a')
@@ -138,7 +140,8 @@ class NaN:
 				s.close()
 
 		except  OSError as err:
-			print("OS error {1}: {0}".format(err,port_node))
+			#print("OS error {1}: {0}".format(err,port_node))
+			pass
 
 		except ConnectionRefusedError:
 			of = open('log_{0}'.format(publicKey),'a')
