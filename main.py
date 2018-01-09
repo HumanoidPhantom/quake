@@ -28,12 +28,12 @@ dic_neighbours = {}
 
 
 privateKey = RSA.generate(2048)
-publicKey = privateKey.publickey().exportKey()
+publicKey1 = privateKey.publickey().exportKey()
 
-publicKey = hashlib.sha1(publicKey).hexdigest()
+publicKey = hashlib.sha1(publicKey1).hexdigest()
 
 
-dic_network_node[str(publicKey)] = ['127.0.0.1',port]
+dic_network_node[str(publicKey)] = [str(publicKey1),'127.0.0.1',port]
 list_network_node.append(str(publicKey))
 
 
@@ -67,7 +67,8 @@ class mainNei:
 
 	def updateLun(self,node_id,info):
 		if node_id in list_network_node:
-			print('The Node is already in the UNL\n')
+			#print('The Node is already in the UNL\n')
+			pass
 		else:
 			list_network_node.append(node_id)
 			dic_network_node[node_id] = info
@@ -89,7 +90,7 @@ class mainNei:
 				port_request_node =50001
 				dic_network_node_temp = NaN.connectRequestDownload(ip_request_node,port_request_node,publicKey)
 				dic_network_node.update(dic_network_node_temp)
-				print (dic_network_node)
+				#print (dic_network_node)
 				if dic_network_node:
 					list_network_node.clear()
 					for i in dic_network_node:
@@ -97,21 +98,25 @@ class mainNei:
 
 					while len(list_neighbours) < 4:
 						code = NaN.requestNei(dic_network_node,list_network_node,publicKey)
-						if code[0] == 1 :
-							dic_neighbours[code[1]] = [code[2],code[3]]
-							list_neighbours.append(code[1])
-							print ('Neighbours: ', dic_neighbours)
-							time.sleep(3)
+						if code:
+							if code[0] == 1 :
+								dic_neighbours[code[1]] = [code[4],code[2],code[3]]
+								list_neighbours.append(code[1])
+								#print ('Neighbours: ', dic_neighbours)
+							#	time.sleep(1)
 
-						else:
-							print ('Something wrong\n')
-							print ('\n')
-							print ('\n')
-							print ('Neighbours: ', dic_neighbours)
-							print ('\n')
-							print ('\n')
-							print ('Neighbours: ', list_neighbours)
-							time.sleep(3)
+							else:
+								#print ('Something wrong\n')
+								#print ('\n')
+								#print ('\n')
+								#print ('Neighbours: ', dic_neighbours)
+								#print ('\n')
+								#print ('\n')
+								#print ('Neighbours: ', list_neighbours)
+								time.sleep(1)
+							of = open('text{0}.log'.format(port),'a')
+							of.write(str(dic_neighbours)+' The length: '+str(len(dic_neighbours))+'\n\n')
+							of.close()
 				else:
 					pass
 			else:
@@ -129,21 +134,29 @@ class mainNei:
 	def main(self,conn,addr):
 
 		while True:
-			data = conn.recv(4096).decode()
-			data = json.loads(data)
+			data =''
+			while True:
+				tmp = conn.recv(4096).decode()
+				if tmp[-2:] == '}\n':
+					data +=tmp
+					break
+				else:
+					data += tmp
+
 			if data:
+				data = json.loads(data)
 				if data['object'] =='node':
 					node_id = data['hashKey']
 					info = data['data']
-					print(node_id)
-					print('__________')
-					print (list_neighbours)
-					print ('\n')
-					print ('\n')
-					print ('\n')
-					print (dic_neighbours)
-					print ('-----')
-					print('THis is an ', info)
+					#print(node_id)
+					#print('__________')
+					#print (list_neighbours)
+					#print ('\n')
+					#print ('\n')
+					#print ('\n')
+					#print (dic_neighbours)
+					#print ('-----')
+					#print('THis is an ', info)
 					class_method = list_actions.index(data['action'])
 
 					if class_method == 0:
@@ -153,7 +166,7 @@ class mainNei:
 
 					elif class_method == 1:
 						id_newNode = info[0]
-						info = [info[1],info[2]]
+						info = [info[1],info[2],info[3]]
 						self.updateLun(id_newNode, info)
 					
 
@@ -163,24 +176,26 @@ class mainNei:
 						   	'hashKey':publicKey,
 						    'action':'request_Nei',
 						    'data':'No'}
-							msg_send = json.dumps(msg_send).encode()
+							msg_send = (json.dumps(msg_send)+'\n').encode()
 							conn.send(msg_send)
-							print ("The Node is already a neighbour\n")
-							print (dic_neighbours)
-							time.sleep(3)
+							#print ("The Node is already a neighbour\n")
+							#print (dic_neighbours)
+							#time.sleep(3)
 						else:
 							code = NaN.neighbour(conn, info, publicKey,list_neighbours)
 							if code == 1:
 								dic_neighbours[node_id]=info
-								print ('Excellent New Nei!!!!', dic_neighbours)
+								#print ('Excellent New Nei!!!!', dic_neighbours)
 								list_neighbours.append(node_id)
-								time.sleep(3)
+								#time.sleep(3)
 
 								th_newNode = threading.Thread(target = self.updateLun, args =(node_id,info))
 								th_newNode.start()
 							elif code == 0:
-								print ("The list is already full\n")
-
+								#print ("The list is already full\n")
+								of = open('text{0}.log'.format(port),'a')
+								of.write(str(dic_neighbours)+' The length: '+str(len(dic_neighbours))+'\n\n')
+								of.close()
 					conn.close()
 					break
 
@@ -199,48 +214,57 @@ class mainNei:
 
 		host = '127.0.0.1'
 		#port = 50001
-		print(port)
-		serversocket.bind((host,int(port)))
-		serversocket.listen(5)
+		try:
+			serversocket.bind((host,int(port)))
+			serversocket.listen(5)
+			if port != '50001':
+				th_init = threading.Thread(target = main_nei.checkStatus, args= ())
+				th_init.start()
+			else:
+				pass
+			i = 1
+			while th_main.isAlive():
 
-		i = 1
-		while th_main.isAlive():
-			
-			for j in range(i,i+1):
-				list_sockets[j],list_addr[j] = serversocket.accept()
-				th[j] = threading.Thread(target = self.main, args=(list_sockets[j],list_addr[j]))
-				th[j].start()
-				print ("created new thread: Thread-{0}".format(j))
-				print ("Number of active threading: ", threading.activeCount())
-			
-			i = i + 1
-		serversocket.close()
+				for j in range(i,i+1):
+					list_sockets[j],list_addr[j] = serversocket.accept()
+					th[j] = threading.Thread(target = self.main, args=(list_sockets[j],list_addr[j]))
+					th[j].start()
+					#print ("created new thread: Thread-{0}".format(j))
+					#print ("Number of active threading: ", threading.activeCount())
+
+				i = i + 1
+			serversocket.close()
+		except  OSError as err:
+			print("OS error port {1}: {0}".format(err,port))
+			sys.exit()
+
 
 th_main = None
 th_init = None
+main_nei = mainNei()
+
 def run():
 	global th_main
 	global th_init
+	global main_nei
 	global dic_network_node
-	dic_network_node[str(publicKey)][1] = port
-	main_nei = mainNei()
-	th_main = threading.Thread(target=main_nei.listen, args = (port,) )
+	dic_network_node[str(publicKey)][2] = port
+	th_main = threading.Thread(target=main_nei.listen, args=(port,))
 	th_main.daemon = True
 	th_main.start()
 
+	# if port != '50001':
+	#	if th_main.isAlive() :
+	#		print ('Main thread is ready! {0}\n'.format(port))
+	#		th_init = threading.Thread(target = main_nei.checkStatus, args= ())
+	#		th_init.start()
+	#	else:
+	#		print('The node is not able to start!: {0}\n'.format(port))
 
-	if port != '50001':
-		th_init = threading.Thread(target = main_nei.checkStatus, args= ())
-		th_init.daemon = True
-		th_init.start()
-
-	else:
-		pass
-
-	# th_main.join()
-	#th_init.join()
+	##	pass
 
 
 if __name__ == '__main__':
 	port = sys.argv[1]
 	run()
+	th_main.join()
