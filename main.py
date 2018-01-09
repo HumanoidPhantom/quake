@@ -33,7 +33,7 @@ publicKey1 = privateKey.publickey().exportKey()
 publicKey = hashlib.sha1(publicKey1).hexdigest()
 
 
-dic_network_node[str(publicKey)] = [str(publicKey1),'127.0.0.1',port]
+dic_network_node[str(publicKey)] = [publicKey1.decode(),'127.0.0.1',port]
 list_network_node.append(str(publicKey))
 
 

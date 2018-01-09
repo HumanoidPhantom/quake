@@ -18,8 +18,8 @@ from flask import Flask, jsonify, request
 
 
 class Quake:
-    BASKET_SEND_TIME = 20  # sec
-    BASKET_SIZE = 20  # txs
+    BASKET_SEND_TIME = 10  # sec
+    BASKET_SIZE = 5  # txs
     MAX_FAILED_TX_ATTEMPTS = 3
     PORT_DISTANCE = 1000
 
@@ -64,9 +64,13 @@ class Quake:
     def update_chain(self):
         # TODO verify that chain is correct if node is not new
         if self.host:
-            response = requests.get('https://%s%s/chain' % (self.host, self.port))
-            if response.status_code == 200:
-                self.blockchain.chain = response.json()
+            try:
+                response = requests.get('https://%s%s/chain' % (self.host, self.port))
+            except ConnectionError as msg:
+                help.print_log(msg)
+            else:
+                if response.status_code == 200:
+                    self.blockchain.chain = response.json()
 
     def generate_tx_hash(self, new_tx):
         h = SHA.new()
@@ -82,7 +86,8 @@ class Quake:
     #     return node_hash == node
 
     def check_tx_basket(self, by_timer=True):
-        help.print_log((len(self.tx_basket), 'neighbors', main.dic_neighbours, 'nodes', main.dic_network_node))
+        help.print_log(('basket', len(self.tx_basket), 'valid', len(self.valid_tx), 'failed', len(self.failed_tx),
+                        'nbrs', len(main.dic_neighbours), 'nodes', len(main.dic_network_node)))
         if not by_timer and len(self.tx_basket) < Quake.BASKET_SIZE:
             help.print_log("small basket")
             return
@@ -92,10 +97,10 @@ class Quake:
         self.send_basket_timer.daemon = True
         self.send_basket_timer.start()
 
-        threading.Thread(target=send_tx_basket, args=(main.dic_neighbours, self.tx_basket, self.hash))
+        threading.Thread(target=send_tx_basket, args=(main.dic_neighbours, self.tx_basket, self.hash)).start()
 
     def verify_signature(self, pubkey, signature, tx_hash):
-        key = RSA.importKey(pubkey)
+        key = RSA.importKey(pubkey.encode())
         verifier = PKCS1_PSS.new(key)
         return verifier.verify(tx_hash, base64.b64decode(signature.encode()))
 
@@ -188,11 +193,15 @@ class Quake:
 
     def request_tx_by_hash(self, tx_hash):
         for nbr in main.dic_neighbours:
-            response = requests.get('http://%s:%s/tx/info' % (nbr[1], peer_port(nbr[2])), params={'hash': tx_hash})
-            if response.status_code != 200:
-                continue
+            try:
+                response = requests.get('http://%s:%s/tx/info' % (nbr[1], peer_port(nbr[2])), params={'hash': tx_hash})
+            except ConnectionError as msg:
+                help.print_log(msg)
+            else:
+                if response.status_code != 200:
+                    continue
 
-            return json.loads(response.text)
+                return json.loads(response.text)
         return {}
 
 
@@ -204,7 +213,7 @@ quake = Quake()
 
 
 def peer_port(c_port):
-    return int(c_port) + Quake.PORT_DISTANCE
+    return int(c_port) - Quake.PORT_DISTANCE
 
 
 def check_required(required, received):
@@ -220,26 +229,32 @@ def send_tx_basket(neighbors, basket, node_hash, exclude_neigbors=()):
     }
 
     is_sent = False
+    help.print_log('here')
     for node_hash in neighbors:
         if node_hash in exclude_neigbors:
             continue
 
-        response = requests.post('http://%s:%s/txs/basket' % (neighbors[node_hash][1],
-                                                              peer_port(neighbors[node_hash][2])), data=txs_data)
+        try:
+            response = requests.post('http://%s:%s/txs/basket' % (neighbors[node_hash][1],
+                                                                  peer_port(neighbors[node_hash][2])), data=txs_data)
+        except ConnectionError as msg:
+            help.print_log(msg)
+        else:
+            if response.status_code == 200:
+                is_sent = True
 
-        if response.status_code == 200:
-            is_sent = True
-
-            txs = json.loads(response.text)
-            for new_tx in txs:
-                checked_tx = quake.check_tx(new_tx, node_hash)
-                if checked_tx[0]:
-                    quake.add_to_tx_list(checked_tx[1])
-                else:
-                    quake.add_to_failed_list(checked_tx[1])
+                txs = json.loads(response.text)
+                help.print_log(txs)
+                for new_tx in txs['txs']:
+                    checked_tx = quake.check_tx(new_tx, node_hash)
+                    if checked_tx[0]:
+                        quake.add_to_tx_list(checked_tx[1])
+                    else:
+                        quake.add_to_failed_list(checked_tx[1])
 
     if is_sent:
         quake.tx_basket = []
+
 
 @app.route('/chain', methods=['GET'])
 def chain():
@@ -294,18 +309,19 @@ def tx():
 @app.route('/txs/basket', methods=['POST'])
 def txs_basket():
     values = request.form
-
-    required = ['node', 'txs']
+    help.print_log(values)
+    required = ['node']
     check_result = check_required(required, values)
     if check_result != -1:
         return check_result
 
     response = {
         'node': quake.hash,
-        'txs': quake.valid_tx.values(),
+        'txs': list(quake.valid_tx.values()),
     }
 
-    threading.Thread(target=quake.handle_tx_basket, args=(values, ))
+    if 'txs' in values:
+        threading.Thread(target=quake.handle_tx_basket, args=(values, ))
 
     return jsonify(response), 200
 
