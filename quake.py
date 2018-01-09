@@ -72,7 +72,7 @@ class Quake:
         h = SHA.new()
 
         h.update(('%s%s%s%s' % (new_tx['sender'], new_tx['receiver'], new_tx['amount'], new_tx['sequence']))
-                        .encode())
+                 .encode())
         return h
 
     # def check_hash(self, pubkey, node):
@@ -82,7 +82,7 @@ class Quake:
     #     return node_hash == node
 
     def check_tx_basket(self, by_timer=True):
-        help.print_log(len(self.tx_basket))
+        help.print_log((len(self.tx_basket), 'neighbors', main.dic_neighbours, 'nodes', main.dic_network_node))
         if not by_timer and len(self.tx_basket) < Quake.BASKET_SIZE:
             help.print_log("small basket")
             return
@@ -219,6 +219,7 @@ def send_tx_basket(neighbors, basket, node_hash, exclude_neigbors=()):
         'txs': basket,
     }
 
+    is_sent = False
     for node_hash in neighbors:
         if node_hash in exclude_neigbors:
             continue
@@ -227,6 +228,8 @@ def send_tx_basket(neighbors, basket, node_hash, exclude_neigbors=()):
                                                               peer_port(neighbors[node_hash][2])), data=txs_data)
 
         if response.status_code == 200:
+            is_sent = True
+
             txs = json.loads(response.text)
             for new_tx in txs:
                 checked_tx = quake.check_tx(new_tx, node_hash)
@@ -235,6 +238,8 @@ def send_tx_basket(neighbors, basket, node_hash, exclude_neigbors=()):
                 else:
                     quake.add_to_failed_list(checked_tx[1])
 
+    if is_sent:
+        quake.tx_basket = []
 
 @app.route('/chain', methods=['GET'])
 def chain():

@@ -235,7 +235,7 @@ class mainNei:
 				i = i + 1
 			serversocket.close()
 		except  OSError as err:
-			print("OS error port {1}: {0}".format(err,port))
+			#print("OS error port {1}: {0}".format(err,port))
 			sys.exit()
 
 
