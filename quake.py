@@ -7,6 +7,7 @@ import json
 from operator import itemgetter
 import threading
 import atexit
+import main
 
 import requests
 from flask import Flask, jsonify, request
@@ -320,14 +321,14 @@ def tx_info():
     return 'Not found', 404
 
 
-def main():
+def start():
     from argparse import ArgumentParser
 
     parser = ArgumentParser()
 
     parser.add_argument('-H', '--host', default='127.0.0.1', type=str, help='ip or url')
     parser.add_argument('-p', '--port', default=5000, type=int, help='port to listen on')
-    parser.add_argument('-sp', '--socket-port', default=50000, type=int, help='port for socket to listen on')
+    parser.add_argument('-sp', '--socket_port', default='50001', type=str, help='port for socket to listen on')
 
     parser.add_argument('-cH', '--connect_to_host', type=str, help='host to connect to')
     parser.add_argument('-cp', '--connect_to_port', type=int, help='port to connect to')
@@ -342,6 +343,9 @@ def main():
 
     host = args.host
     port = args.port
+    main.port = args.socket_port
+
+    main.run()
 
     quake.neighbors = args.neighbors
 
@@ -355,4 +359,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    start()

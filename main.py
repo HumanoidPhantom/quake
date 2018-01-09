@@ -11,8 +11,8 @@ from Crypto.Cipher import PKCS1_OAEP
 from Crypto.PublicKey import RSA
 
 
-port = sys.argv[1]
-
+# port = sys.argv[1]
+port = 0
 list_sockets = {}
 list_addr = {}
 th = {}
@@ -199,6 +199,7 @@ class mainNei:
 
 		host = '127.0.0.1'
 		#port = 50001
+		print(port)
 		serversocket.bind((host,int(port)))
 		serversocket.listen(5)
 
@@ -215,17 +216,31 @@ class mainNei:
 			i = i + 1
 		serversocket.close()
 
-mainNei = mainNei()
-th_main = threading.Thread(target=mainNei.listen, args = (port,) )
-th_main.start()
+th_main = None
+th_init = None
+def run():
+	global th_main
+	global th_init
+	global dic_network_node
+	dic_network_node[str(publicKey)][1] = port
+	main_nei = mainNei()
+	th_main = threading.Thread(target=main_nei.listen, args = (port,) )
+	th_main.daemon = True
+	th_main.start()
 
 
-if port != '50001':
-	th_init = threading.Thread(target = mainNei.checkStatus, args= ())
-	th_init.start()
-	
-else:
-	pass
+	if port != '50001':
+		th_init = threading.Thread(target = main_nei.checkStatus, args= ())
+		th_init.daemon = True
+		th_init.start()
 
-th_main.join()
-#th_init.join()
+	else:
+		pass
+
+	# th_main.join()
+	#th_init.join()
+
+
+if __name__ == '__main__':
+	port = 50001
+	run()
