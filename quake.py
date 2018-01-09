@@ -65,7 +65,7 @@ class Quake:
         # TODO verify that chain is correct if node is not new
         if self.host:
             try:
-                response = requests.get('https://%s%s/chain' % (self.host, self.port))
+                response = requests.get('https://%s:%s/chain' % (self.host, self.port))
             except ConnectionError as msg:
                 help.print_log(msg)
             else:
@@ -116,10 +116,11 @@ class Quake:
         tx_hash = self.generate_tx_hash(new_tx)
         result = True
         for item in new_tx['signatures']:
-            if not item['node'] in main.dic_network_node:
+            if item not in main.dic_network_node:
                 continue
-            node = main.dic_network_node[item['node']]
-            result &= self.verify_signature(node[0], item['signature'], tx_hash)
+            # TODO fix function
+            node = main.dic_network_node[item]
+            result &= self.verify_signature(node[0], new_tx['signatures'][item], tx_hash)
 
         return result
 
@@ -127,13 +128,10 @@ class Quake:
         response = False
 
         if 'signatures' not in new_tx:
-            new_tx['signatures'] = []
+            new_tx['signatures'] = {}
 
         if 'cur_signature' in new_tx and node_hash:
-            new_tx['signatures'].append({
-                'node': node_hash,
-                'signature': new_tx['cur_signature']
-            })
+            new_tx['signatures'][node_hash] = new_tx['cur_signature']
 
         if self.check_signatures(new_tx):
             # some additional verifications
@@ -151,7 +149,8 @@ class Quake:
         if tx_hash in self.valid_tx:
             is_new = False
             new_tx['signatures'] += \
-                [item for item in self.valid_tx[tx_hash]['signatures'] if item not in new_tx['signatures']]
+                [self.valid_tx[tx_hash]['signatures'][item]
+                 for item in self.valid_tx[tx_hash]['signatures'] if item not in new_tx['signatures']]
 
         new_tx['cur_signature'] = base64.b64encode(signature).decode()
 
@@ -172,6 +171,7 @@ class Quake:
         self.failed_tx.append(new_tx)
 
     def handle_tx_basket(self, tx_basket):
+        # TODO check that signatures list is the same and has not changed
         updated_tx_basket_new = []
         updated_tx_basket_seen = []
         for new_tx in tx_basket['txs']:
