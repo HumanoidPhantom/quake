@@ -17,23 +17,26 @@ class Quake:
     BASKET_SEND_TIME = 20  # sec
     BASKET_SIZE = 20  # txs
     MAX_FAILED_TX_ATTEMPTS = 3
+    PORT_DISTANCE = 1000
 
     def __init__(self, neighbors=4):
         self.valid_node = True
 
         self.host = ''
         self.__port = ''
+        self.hash = main.publicKey
         self.neighbors = neighbors
         self.blockchain = Blockchain()
 
-        self.key = RSA.generate(2048)
+        self.key = main.privateKey
 
-        self.identity = self.generate_identity()
-        self.nodes = [self.identity]
+        # nodes list in main.dic_network_node
+        # dict. change in code where list is assumed
+        # self.nodes = [self.identity]
 
-        self.neighbors_list = []
-
-        self.update_data()
+        # neighbors in main.dic_neighbours
+        # dict. change in code, where list is assumed
+        # self.neighbors_list = []
 
         self.tx_basket = []
         self.failed_tx = []
@@ -53,36 +56,25 @@ class Quake:
     def port(self, c_port):
         self.__port = ':%i' % c_port if c_port else ''
 
-    def update_data(self):
+    def update_chain(self):
+        # TODO verify that chain is correct if node is not new
         if self.host:
-            response = requests.get('https://%s%s/data' % (self.host, self.port))
+            response = requests.get('https://%s%s/chain' % (self.host, self.port))
             if response.status_code == 200:
-                self.nodes = response.json()['nodes']
-                self.blockchain.chain = response.json()['chain']
+                self.blockchain.chain = response.json()
 
     def generate_node_hash(self, pubkey):
-        return hashlib.sha256(('%s%s%s' % (pubkey, self.host, self.port)).encode())
+        return hashlib.sha1(('%s' % (pubkey, )).encode()).hexdigest()
 
     def generate_tx_hash(self, new_tx):
-        return hashlib.sha256(('%s%s%s%s' % (new_tx['sender'], new_tx['receiver'], new_tx['amount'], new_tx['sequence'])))
+        return hashlib.sha1(
+            ('%s%s%s%s' % (new_tx['sender'], new_tx['receiver'], new_tx['amount'], new_tx['sequence']))).hexdigest()
 
-    def generate_identity(self):
-        pubkey = self.key.publickey().exportKey()
-        node_hash = self.generate_node_hash(pubkey)
-        return {
-            'hash': node_hash,
-            'pubkey': pubkey,
-            'address': self.host + self.port
-        }
-
-    def sort_nodes(self):
-        self.nodes = sorted(self.nodes, key=itemgetter('hash'))
-
-    def check_hash(self, identity):
-        # fix
-        node_hash = self.generate_node_hash(identity['pubkey'])
-
-        return node_hash == identity['hash']
+    # def check_hash(self, pubkey, node):
+    #     # fix
+    #     node_hash = self.generate_node_hash(pubkey)
+    #
+    #     return node_hash == node
 
     def check_tx_basket(self, by_timer=True):
         if not by_timer and len(self.tx_basket) < Quake.BASKET_SIZE:
@@ -93,18 +85,11 @@ class Quake:
         self.send_basket_timer.daemon = True
         self.send_basket_timer.start()
 
-        threading.Thread(target=send_tx_basket, args=(self.neighbors_list, self.tx_basket, self.identity['hash']))
+        threading.Thread(target=send_tx_basket, args=(main.dic_neighbours, self.tx_basket, self.hash))
 
     def verify_signature(self, pubkey, signature, tx_hash):
         key = RSA.importKey(pubkey)
         return key.verify(tx_hash, signature)
-
-    def find_node(self, node_hash):
-        nodes = [item for item in self.nodes if item['hash'] == node_hash]
-        if len(nodes):
-            return nodes[0]
-
-        return None
 
     def find_tx(self, tx_hash):
         txs = [index for index in range(len(self.tx_basket)) if self.tx_basket[index]['hash'] == tx_hash]
@@ -118,11 +103,10 @@ class Quake:
         tx_hash = self.generate_tx_hash(new_tx)
         result = True
         for item in new_tx['signatures']:
-            node = self.find_node(item['node'])
-            if not node:
+            if not item['node'] in main.dic_network_node:
                 continue
-
-            result &= self.verify_signature(node['pubkey'], item['signature'], tx_hash)
+            node = main.dic_network_node[item['node']]
+            result &= self.verify_signature(node[0], item['signature'], tx_hash)
 
         return result
 
@@ -157,7 +141,7 @@ class Quake:
 
         new_tx['cur_signature'] = signature
 
-        if len(new_tx['signatures']) / len(self.nodes) > 2/3:
+        if len(new_tx['signatures']) / len(main.dic_network_node) > 2/3:
             self.voted_tx.append(tx_hash)
 
         self.valid_tx[tx_hash] = new_tx
@@ -188,15 +172,15 @@ class Quake:
                 quake.add_to_failed_list(checked_tx[1])
 
         if updated_tx_basket_new:
-            send_tx_basket(self.identity['hash'], updated_tx_basket_new, self.neighbors_list)
+            send_tx_basket(self.hash, updated_tx_basket_new, main.dic_neighbours)
 
         if updated_tx_basket_seen:
-            nghbrs = [item for item in self.neighbors_list if item['hash'] != tx_basket['node']]
-            send_tx_basket(self.identity['hash'], updated_tx_basket_new, nghbrs)
+            neighbors = [item for item in main.dic_neighbours if item != tx_basket['node']]
+            send_tx_basket(self.hash, updated_tx_basket_new, neighbors)
 
     def request_tx_by_hash(self, tx_hash):
-        for nbr in self.neighbors_list:
-            response = requests.get('http://%s/tx/info' % nbr['address'], params={'hash': tx_hash})
+        for nbr in main.dic_neighbours:
+            response = requests.get('http://%s:%s/tx/info' % (nbr[1], peer_port(nbr[2])), params={'hash': tx_hash})
             if response.status_code != 200:
                 continue
 
@@ -209,6 +193,10 @@ app = Flask(__name__)
 node_identifier = str(uuid4()).replace('-', '')
 
 quake = Quake()
+
+
+def peer_port(c_port):
+    return int(c_port) + Quake.PORT_DISTANCE
 
 
 def check_required(required, received):
@@ -224,7 +212,7 @@ def send_tx_basket(node_hash, basket, neighbors):
     }
 
     for node in neighbors:
-        response = requests.post('http://%s/txs/basket' % node['address'], data=txs_data)
+        response = requests.post('http://%s:%s/txs/basket' % (node[1], peer_port(node[2])), data=txs_data)
 
         if response.status_code == 200:
             txs = json.loads(response.text)
@@ -236,10 +224,10 @@ def send_tx_basket(node_hash, basket, neighbors):
                     quake.add_to_failed_list(checked_tx[1])
 
 
-@app.route('/data', methods=['GET'])
-def data():
+@app.route('/chain', methods=['GET'])
+def chain():
     # Get the list of peers
-    response = {'nodes': quake.nodes, 'chain': quake.blockchain.chain}
+    response = quake.blockchain.chain
 
     return jsonify(response), 200
 
@@ -272,18 +260,18 @@ def tx():
     return 'OK', 200
 
 
-@app.route('/neighbor', methods=['POST'])
-def neighbor():
-    # Receive node's identity. Become a neighbor
-    values = request.get_json()
-    required = ['hash', 'pubkey', 'host', 'port']
-
-    check_result = check_required(required, values)
-    if check_result != -1:
-        return check_result
-
-    response = {}
-    return jsonify(response), 200
+# @app.route('/neighbor', methods=['POST'])
+# def neighbor():
+#     # Receive node's identity. Become a neighbor
+#     values = request.get_json()
+#     required = ['hash', 'pubkey', 'host', 'port']
+#
+#     check_result = check_required(required, values)
+#     if check_result != -1:
+#         return check_result
+#
+#     response = {}
+#     return jsonify(response), 200
 
 
 @app.route('/txs/basket', methods=['POST'])
@@ -296,7 +284,7 @@ def txs_basket():
         return check_result
 
     response = {
-        'node': quake.identity['hash'],
+        'node': quake.hash,
         'txs': quake.valid_tx.values(),
     }
 
@@ -327,8 +315,7 @@ def start():
     parser = ArgumentParser()
 
     parser.add_argument('-H', '--host', default='127.0.0.1', type=str, help='ip or url')
-    parser.add_argument('-p', '--port', default=5000, type=int, help='port to listen on')
-    parser.add_argument('-sp', '--socket_port', default='50001', type=str, help='port for socket to listen on')
+    parser.add_argument('-p', '--socket_port', default=49001, type=int, help='port to listen on')
 
     parser.add_argument('-cH', '--connect_to_host', type=str, help='host to connect to')
     parser.add_argument('-cp', '--connect_to_port', type=int, help='port to connect to')
@@ -343,7 +330,7 @@ def start():
 
     host = args.host
     port = args.port
-    main.port = args.socket_port
+    main.port = str(args.port + Quake.PORT_DISTANCE)
 
     main.run()
 
@@ -351,9 +338,10 @@ def start():
 
     quake.valid_node = not args.non_valid_node
 
-    quake.nodes = connect_host
+    quake.host = connect_host
     quake.port = connect_port
-    quake.update_data()
+
+    quake.update_chain()
 
     app.run(host=host, port=port)
 
