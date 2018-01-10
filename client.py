@@ -18,6 +18,8 @@ sequence = 0
 
 
 def send():
+    global sequence
+
     receiver = input('Enter receiver address or press Enter to use random value: ')
     tx = {
         'sender': sender,
@@ -29,7 +31,6 @@ def send():
 
     print(response.status_code, response.text)
     if response.status_code == 200:
-        global sequence
         sequence += 1
 
 

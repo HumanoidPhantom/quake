@@ -12,14 +12,15 @@ import threading
 import atexit
 import main
 import help
+import time
 
 import requests
 from flask import Flask, jsonify, request
 
 
 class Quake:
-    BASKET_SEND_TIME = 10  # sec
-    BASKET_SIZE = 5  # txs
+    BASKET_SEND_TIME = 30  # sec
+    BASKET_SIZE = 1  # txs
     MAX_FAILED_TX_ATTEMPTS = 3
     PORT_DISTANCE = 1000
 
@@ -52,6 +53,9 @@ class Quake:
         self.send_basket_timer = threading.Timer(Quake.BASKET_SEND_TIME, self.check_tx_basket)
         self.send_basket_timer.daemon = True
         self.send_basket_timer.start()
+
+        # for debugging
+        self.tx_requests_stats = {}
 
     @property
     def port(self):
@@ -139,9 +143,17 @@ class Quake:
 
         return response, new_tx
 
-    def add_to_tx_list(self, new_tx, from_client=False):
+    def add_to_tx_list(self, new_tx, from_client=False, sender_node=''):
         tx_hash = self.generate_tx_hash(new_tx)
         new_tx['hash'] = tx_hash.hexdigest()
+
+        if new_tx['hash'] not in self.tx_requests_stats:
+            self.tx_requests_stats[new_tx['hash']] = {
+                'time': time.time(),
+                'requests': 0 if from_client else 1
+            }
+        else:
+            self.tx_requests_stats[new_tx['hash']]['requests'] += 1
 
         is_updated = True
         if new_tx['hash'] in self.valid_tx:
@@ -159,8 +171,14 @@ class Quake:
                 signature = self.signer.sign(tx_hash)
                 new_tx['signatures'][self.hash] = base64.b64encode(signature).decode()
 
+        help.print_log((new_tx['hash'], self.voted_tx))
+
         if len(new_tx['signatures']) / len(main.dic_network_node) > 2/3 and new_tx['hash'] not in self.voted_tx:
             self.voted_tx.append(new_tx['hash'])
+
+            help.print_log((self.hash, 'sender', sender_node, 'sequence', new_tx['sequence'], 'requests_number',
+                            self.tx_requests_stats[new_tx['hash']]['requests'], 'time',
+                            time.time() - self.tx_requests_stats[new_tx['hash']]['time'], 'signatures', len(new_tx['signatures'])), file_name='stats.log')
 
         self.valid_tx[new_tx['hash']] = new_tx
 
@@ -176,27 +194,26 @@ class Quake:
         self.failed_tx.append(new_tx)
 
     def handle_tx_basket(self, tx_basket):
-        # TODO check that signatures list is the same and has not changed
-        updated_tx_basket_old = []
-        updated_tx_basket_updated = []
+        old_tx_basket = []
+        updated_tx_basket = []
         for new_tx in tx_basket['txs']:
             checked_tx = quake.check_tx(new_tx, tx_basket['node'])
             if checked_tx[0]:
-                is_updated, tmp_tx, tx_hash = quake.add_to_tx_list(checked_tx[1])
-                # help.print_log((is_updated, tmp_tx))
+                is_updated, tmp_tx, tx_hash = quake.add_to_tx_list(checked_tx[1], sender_node=tx_basket['node'])
+
                 if is_updated:
-                    updated_tx_basket_updated.append(tmp_tx)
+                    updated_tx_basket.append(tmp_tx)
                 else:
-                    if tmp_tx not in self.voted_tx:
-                        updated_tx_basket_old.append(tmp_tx)
+                    if tx_hash not in self.voted_tx:
+                        old_tx_basket.append(tmp_tx)
             else:
                 quake.add_to_failed_list(checked_tx[1])
 
-        if updated_tx_basket_updated:
-            send_tx_basket(main.dic_neighbours, updated_tx_basket_updated, self.hash)
+        if updated_tx_basket:
+            send_tx_basket(main.dic_neighbours, updated_tx_basket, self.hash)
 
-        if updated_tx_basket_old:
-            send_tx_basket(main.dic_neighbours, updated_tx_basket_old, self.hash, exclude_neigbors=(tx_basket['node']))
+        if old_tx_basket:
+            send_tx_basket(main.dic_neighbours, old_tx_basket, self.hash, exclude_neigbors=(tx_basket['node']))
 
     def request_tx_by_hash(self, tx_hash):
         for nbr in main.dic_neighbours:
