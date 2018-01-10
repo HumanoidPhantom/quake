@@ -87,7 +87,7 @@ class mainNei:
 				#ip_request_node = input('Type IP address of Node\n')
 				#port_request_node = input('Type Port of Node\n')
 				ip_request_node = '127.0.0.1'
-				port_request_node =50001
+				port_request_node =30001
 				dic_network_node_temp = NaN.connectRequestDownload(ip_request_node,port_request_node,publicKey)
 				dic_network_node.update(dic_network_node_temp)
 				#print (dic_network_node)
@@ -213,11 +213,11 @@ class mainNei:
 		serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,1)
 
 		host = '127.0.0.1'
-		#port = 50001
+		#port = 30001
 		try:
 			serversocket.bind((host,int(port)))
 			serversocket.listen(5)
-			if port != '50001':
+			if port != '30001':
 				th_init = threading.Thread(target = main_nei.checkStatus, args= ())
 				th_init.start()
 			else:
@@ -253,7 +253,7 @@ def run():
 	th_main.daemon = True
 	th_main.start()
 
-	# if port != '50001':
+	# if port != '30001':
 	#	if th_main.isAlive() :
 	#		print ('Main thread is ready! {0}\n'.format(port))
 	#		th_init = threading.Thread(target = main_nei.checkStatus, args= ())

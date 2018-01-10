@@ -90,8 +90,8 @@ class Quake:
     #     return node_hash == node
 
     def check_tx_basket(self, by_timer=True):
-        help.print_log((self.hash, 'basket', len(self.tx_basket), 'valid', len(self.valid_tx), 'failed', len(self.failed_tx),
-                        'voted', len(self.voted_tx), 'nbrs', len(main.dic_neighbours), 'nodes', len(main.dic_network_node)))
+        # help.print_log((self.hash, 'basket', len(self.tx_basket), 'valid', len(self.valid_tx), 'failed', len(self.failed_tx),
+        #                 'voted', len(self.voted_tx), 'nbrs', len(main.dic_neighbours), 'nodes', len(main.dic_network_node)))
         if not by_timer and len(self.tx_basket) < Quake.BASKET_SIZE:
             return
 
@@ -172,8 +172,6 @@ class Quake:
                 signature = self.signer.sign(tx_hash)
                 new_tx['signatures'][self.hash] = base64.b64encode(signature).decode()
 
-        help.print_log((new_tx['hash'], self.voted_tx))
-
         if len(new_tx['signatures']) / len(main.dic_network_node) > 2/3:
             is_updated = False
             if new_tx['hash'] not in self.voted_tx:
@@ -239,6 +237,10 @@ class Quake:
 
 
 app = Flask(__name__)
+
+import logging
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)
 
 node_identifier = str(uuid4()).replace('-', '')
 
@@ -366,7 +368,7 @@ def start():
     parser = ArgumentParser()
 
     parser.add_argument('-H', '--host', default='127.0.0.1', type=str, help='ip or url')
-    parser.add_argument('-p', '--port', default=50001, type=int, help='port to listen on')
+    parser.add_argument('-p', '--port', default=30001, type=int, help='port to listen on')
 
     parser.add_argument('-cH', '--connect_to_host', type=str, help='host to connect to')
     parser.add_argument('-cp', '--connect_to_port', type=int, help='port to connect to')

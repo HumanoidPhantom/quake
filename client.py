@@ -4,7 +4,7 @@ import binascii, os, sys, requests, json
 parser = ArgumentParser()
 
 parser.add_argument('-H', '--host', default='127.0.0.1', type=str, help='ip to send tx to (127.0.0.1 by default)')
-parser.add_argument('-p', '--port', default=49001, type=int, help='port (49001 by default)')
+parser.add_argument('-p', '--port', default=29001, type=int, help='port (49001 by default)')
 
 parser.add_argument('-s', '--sender', default='', type=str, help='Sender address (hex string)')
 
