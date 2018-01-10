@@ -173,12 +173,14 @@ class Quake:
 
         help.print_log((new_tx['hash'], self.voted_tx))
 
-        if len(new_tx['signatures']) / len(main.dic_network_node) > 2/3 and new_tx['hash'] not in self.voted_tx:
-            self.voted_tx.append(new_tx['hash'])
+        if len(new_tx['signatures']) / len(main.dic_network_node) > 2/3:
+            is_updated = False
+            if new_tx['hash'] not in self.voted_tx:
+                self.voted_tx.append(new_tx['hash'])
 
-            help.print_log((self.hash, 'sender', sender_node, 'sequence', new_tx['sequence'], 'requests_number',
-                            self.tx_requests_stats[new_tx['hash']]['requests'], 'time',
-                            time.time() - self.tx_requests_stats[new_tx['hash']]['time'], 'signatures', len(new_tx['signatures'])), file_name='stats.log')
+                help.print_log((self.hash, 'sender', sender_node, 'sequence', new_tx['sequence'], 'requests_number',
+                                self.tx_requests_stats[new_tx['hash']]['requests'], 'time',
+                                time.time() - self.tx_requests_stats[new_tx['hash']]['time'], 'signatures', len(new_tx['signatures'])), file_name='stats.log')
 
         self.valid_tx[new_tx['hash']] = new_tx
 
