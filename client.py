@@ -21,17 +21,25 @@ def send():
     global sequence
 
     receiver = input('Enter receiver address or press Enter to use random value: ')
-    tx = {
-        'sender': sender,
-        'receiver': receiver if receiver else binascii.b2a_hex(os.urandom(10)),
-        'amount': 1,
-        'sequence': sequence
-    }
-    response = requests.post('http://%s:%s/tx' % (host, port), json=tx)
+    messages_number = input('The number of messages to send at once: ')
 
-    print(response.status_code, response.text)
-    if response.status_code == 200:
-        sequence += 1
+    try:
+        messages_number = int(messages_number)
+    except ValueError:
+        messages_number = 1
+
+    for i in range(messages_number):
+        tx = {
+            'sender': sender,
+            'receiver': receiver if receiver else binascii.b2a_hex(os.urandom(10)),
+            'amount': 1,
+            'sequence': sequence
+        }
+        response = requests.post('http://%s:%s/tx' % (host, port), json=tx)
+
+        print(response.status_code, response.text)
+        if response.status_code == 200:
+            sequence += 1
 
 
 print('Your address: ' + sender)

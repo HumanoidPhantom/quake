@@ -17,6 +17,7 @@ list_sockets = {}
 list_addr = {}
 th = {}
 
+MIN_NEIGHBORS = 5
 
 list_network_node = []
 dic_network_node ={}
@@ -96,7 +97,7 @@ class mainNei:
 					for i in dic_network_node:
 						list_network_node.append(i)
 
-					while len(list_neighbours) < 4:
+					while len(list_neighbours) < MIN_NEIGHBORS:
 						code = NaN.requestNei(dic_network_node,list_network_node,publicKey)
 						if code:
 							if code[0] == 1 :

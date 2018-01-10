@@ -71,7 +71,7 @@ class Quake:
             try:
                 response = requests.get('https://%s:%s/chain' % (self.host, self.port))
             except requests.RequestException as msg:
-                help.print_log(msg, False)
+                help.print_log(msg, False, file_log=False)
             else:
                 if response.status_code == 200:
                     self.blockchain.chain = response.json()
@@ -145,6 +145,7 @@ class Quake:
         new_tx['hash'] = tx_hash.hexdigest()
 
         if from_client:
+            help.print_log(('receiver', self.hash, 'tx', new_tx['hash']), file_name='stats.log', debug_mode=False)
             f = open(new_tx['hash'] + '.log', 'w')
             f.write(str(time.time()))
             f.close()
@@ -172,8 +173,10 @@ class Quake:
                 signature = self.signer.sign(tx_hash)
                 new_tx['signatures'][self.hash] = base64.b64encode(signature).decode()
 
-        if len(new_tx['signatures']) / len(main.dic_network_node) > 2/3:
+        votes_ratio = len(new_tx['signatures']) / len(main.dic_network_node)
+        if votes_ratio > 2/3:
             is_updated = False
+
             if new_tx['hash'] not in self.voted_tx:
                 self.voted_tx.append(new_tx['hash'])
 
@@ -183,9 +186,10 @@ class Quake:
                     pass
                 else:
                     start_time = f.readline()
-                    help.print_log((self.hash, 'sender', sender_node, 'sequence', new_tx['sequence'], 'requests_number',
+                    help.print_log((self.hash, 'sender', sender_node, 'tx', new_tx['hash'], 'sequence', new_tx['sequence'], 'requests_number',
                                     self.tx_requests_stats[new_tx['hash']]['requests'], 'time',
-                                    time.time() - float(start_time), 'signatures', len(new_tx['signatures'])), file_name='stats.log')
+                                    time.time() - float(start_time), 'signatures', len(new_tx['signatures'])),
+                                   file_name='stats.log', debug_mode=False)
 
         self.valid_tx[new_tx['hash']] = new_tx
 
@@ -227,7 +231,7 @@ class Quake:
             try:
                 response = requests.get('http://%s:%s/tx/info' % (nbr[1], peer_port(nbr[2])), json={'hash': tx_hash})
             except requests.RequestException as msg:
-                help.print_log(msg, False)
+                help.print_log(msg, False, file_log=False)
             else:
                 if response.status_code != 200:
                     continue
@@ -272,7 +276,7 @@ def send_tx_basket(neighbors, basket, node_hash, exclude_neigbors=()):
             response = requests.post('http://%s:%s/txs/basket' % (neighbors[node_hash][1],
                                                                   peer_port(neighbors[node_hash][2])), json=txs_data)
         except requests.RequestException as msg:
-            help.print_log(msg, False)
+            help.print_log(msg, False, file_log=False)
         else:
             if response.status_code == 200:
                 is_sent = True
@@ -294,7 +298,6 @@ def tx():
     # Tx from client
     values = request.get_json(force=True)
     required = ['sender', 'receiver', 'amount', 'sequence']
-
     check_result = check_required(required, values)
     if check_result != -1:
         return check_result

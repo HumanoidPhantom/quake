@@ -7,11 +7,16 @@ parser = ArgumentParser()
 parser.add_argument('-H', '--host', default='127.0.0.1', type=str, help='ip to send tx to (127.0.0.1 by default)')
 parser.add_argument('-a', '--amount', default=10, type=int, help='the number of nodes to run')
 
+parser.add_argument('-s', '--start_port', default=30001, type=int, help='run nodes starting from port')
+
 args = parser.parse_args()
 amount = args.amount
+start_port = args.start_port
 
 for i in range(amount):
-    port_arg = 30001 + i
+    port_arg = start_port + i
+    print('starting', port_arg)
     threading.Thread(target=os.system, args=('python3 quake.py -p ' + str(port_arg), )).start()
     time.sleep(1)
 
+print('done')

@@ -7,6 +7,7 @@ import hashlib
 import sys
 import random
 
+MAX_NEIGHBORS = 20
 
 
 class NaN:
@@ -153,7 +154,7 @@ class NaN:
 
 	def neighbour(conn,info, publicKey,list_neighbours):
 
-		if len(list_neighbours) < 10:
+		if len(list_neighbours) < MAX_NEIGHBORS:
 			msg_send = {'object':'node',
 				   'hashKey':publicKey,
 				   'action':'request_Nei',
