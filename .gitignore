@@ -103,5 +103,4 @@ ENV/
 #pycharm
 .idea/
 
-basket.log
-text*.log
+*.log
