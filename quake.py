@@ -126,14 +126,11 @@ class Quake:
 
         return result
 
-    def check_tx(self, new_tx, node_hash=''):
+    def check_tx(self, new_tx):
         response = False
 
         if 'signatures' not in new_tx:
             new_tx['signatures'] = {}
-
-        # if 'cur_signature' in new_tx and node_hash:
-        #     new_tx['signatures'][node_hash] = new_tx['cur_signature']
 
         if self.check_signatures(new_tx):
             # some additional verifications
@@ -147,9 +144,13 @@ class Quake:
         tx_hash = self.generate_tx_hash(new_tx)
         new_tx['hash'] = tx_hash.hexdigest()
 
+        if from_client:
+            f = open(new_tx['hash'] + '.log', 'w')
+            f.write(str(time.time()))
+            f.close()
+
         if new_tx['hash'] not in self.tx_requests_stats:
             self.tx_requests_stats[new_tx['hash']] = {
-                'time': time.time(),
                 'requests': 0 if from_client else 1
             }
         else:
@@ -178,9 +179,15 @@ class Quake:
             if new_tx['hash'] not in self.voted_tx:
                 self.voted_tx.append(new_tx['hash'])
 
-                help.print_log((self.hash, 'sender', sender_node, 'sequence', new_tx['sequence'], 'requests_number',
-                                self.tx_requests_stats[new_tx['hash']]['requests'], 'time',
-                                time.time() - self.tx_requests_stats[new_tx['hash']]['time'], 'signatures', len(new_tx['signatures'])), file_name='stats.log')
+                try:
+                    f = open(new_tx['hash'] + '.log', 'r')
+                except:
+                    pass
+                else:
+                    start_time = f.readline()
+                    help.print_log((self.hash, 'sender', sender_node, 'sequence', new_tx['sequence'], 'requests_number',
+                                    self.tx_requests_stats[new_tx['hash']]['requests'], 'time',
+                                    time.time() - float(start_time), 'signatures', len(new_tx['signatures'])), file_name='stats.log')
 
         self.valid_tx[new_tx['hash']] = new_tx
 
@@ -199,7 +206,7 @@ class Quake:
         old_tx_basket = []
         updated_tx_basket = []
         for new_tx in tx_basket['txs']:
-            checked_tx = quake.check_tx(new_tx, tx_basket['node'])
+            checked_tx = quake.check_tx(new_tx)
             if checked_tx[0]:
                 is_updated, tmp_tx, tx_hash = quake.add_to_tx_list(checked_tx[1], sender_node=tx_basket['node'])
 
