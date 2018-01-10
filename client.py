@@ -25,7 +25,7 @@ def send():
         'amount': 1,
         'sequence': sequence
     }
-    response = requests.post('http://%s:%s/tx' % (host, port), data=tx)
+    response = requests.post('http://%s:%s/tx' % (host, port), json=tx)
 
     print(response.status_code, response.text)
     if response.status_code == 200:

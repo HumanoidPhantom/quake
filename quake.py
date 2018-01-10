@@ -1,6 +1,6 @@
 import sys
 from Crypto.PublicKey import RSA
-from Crypto.Signature import PKCS1_PSS
+from Crypto.Signature import PKCS1_v1_5
 from Crypto.Hash import SHA
 from blockchain import Blockchain
 from uuid import uuid4
@@ -33,7 +33,7 @@ class Quake:
         self.blockchain = Blockchain()
 
         self.key = main.privateKey
-        self.signer = PKCS1_PSS.new(self.key)
+        self.signer = PKCS1_v1_5.new(self.key)
 
         # nodes list in main.dic_network_node
         # dict. change in code where list is assumed
@@ -66,8 +66,8 @@ class Quake:
         if self.host:
             try:
                 response = requests.get('https://%s:%s/chain' % (self.host, self.port))
-            except ConnectionError as msg:
-                help.print_log(msg)
+            except requests.RequestException as msg:
+                help.print_log(msg, False)
             else:
                 if response.status_code == 200:
                     self.blockchain.chain = response.json()
@@ -86,10 +86,9 @@ class Quake:
     #     return node_hash == node
 
     def check_tx_basket(self, by_timer=True):
-        help.print_log(('basket', len(self.tx_basket), 'valid', len(self.valid_tx), 'failed', len(self.failed_tx),
-                        'nbrs', len(main.dic_neighbours), 'nodes', len(main.dic_network_node)))
+        help.print_log((self.hash, 'basket', len(self.tx_basket), 'valid', len(self.valid_tx), 'failed', len(self.failed_tx),
+                        'voted', len(self.voted_tx), 'nbrs', len(main.dic_neighbours), 'nodes', len(main.dic_network_node)))
         if not by_timer and len(self.tx_basket) < Quake.BASKET_SIZE:
-            help.print_log("small basket")
             return
 
         self.send_basket_timer.cancel()
@@ -101,7 +100,7 @@ class Quake:
 
     def verify_signature(self, pubkey, signature, tx_hash):
         key = RSA.importKey(pubkey.encode())
-        verifier = PKCS1_PSS.new(key)
+        verifier = PKCS1_v1_5.new(key)
         return verifier.verify(tx_hash, base64.b64decode(signature.encode()))
 
     def find_tx(self, tx_hash):
@@ -118,7 +117,6 @@ class Quake:
         for item in new_tx['signatures']:
             if item not in main.dic_network_node:
                 continue
-            # TODO fix function
             node = main.dic_network_node[item]
             result &= self.verify_signature(node[0], new_tx['signatures'][item], tx_hash)
 
@@ -130,8 +128,8 @@ class Quake:
         if 'signatures' not in new_tx:
             new_tx['signatures'] = {}
 
-        if 'cur_signature' in new_tx and node_hash:
-            new_tx['signatures'][node_hash] = new_tx['cur_signature']
+        # if 'cur_signature' in new_tx and node_hash:
+        #     new_tx['signatures'][node_hash] = new_tx['cur_signature']
 
         if self.check_signatures(new_tx):
             # some additional verifications
@@ -144,18 +142,25 @@ class Quake:
     def add_to_tx_list(self, new_tx, from_client=False):
         tx_hash = self.generate_tx_hash(new_tx)
         new_tx['hash'] = tx_hash.hexdigest()
-        signature = self.signer.sign(tx_hash)
-        is_new = True
-        if tx_hash in self.valid_tx:
-            is_new = False
-            new_tx['signatures'] += \
-                [self.valid_tx[tx_hash]['signatures'][item]
-                 for item in self.valid_tx[tx_hash]['signatures'] if item not in new_tx['signatures']]
 
-        new_tx['cur_signature'] = base64.b64encode(signature).decode()
+        is_updated = True
+        if new_tx['hash'] in self.valid_tx:
+            is_updated = False
+            existing_signatures = self.valid_tx[new_tx['hash']]['signatures'].copy()
+            for item in existing_signatures:
+                if item not in new_tx['signatures']:
+                    new_tx['signatures'][item] = existing_signatures[item]
+                    is_updated = True
+        else:
+            if 'signatures' not in new_tx:
+                new_tx['signatures'] = {}
 
-        if len(new_tx['signatures']) / len(main.dic_network_node) > 2/3:
-            self.voted_tx.append(tx_hash)
+            if self.hash not in new_tx['signatures']:
+                signature = self.signer.sign(tx_hash)
+                new_tx['signatures'][self.hash] = base64.b64encode(signature).decode()
+
+        if len(new_tx['signatures']) / len(main.dic_network_node) > 2/3 and new_tx['hash'] not in self.voted_tx:
+            self.voted_tx.append(new_tx['hash'])
 
         self.valid_tx[new_tx['hash']] = new_tx
 
@@ -164,7 +169,7 @@ class Quake:
             if tx_index == -1:
                 self.tx_basket.append(new_tx)
 
-        return is_new, new_tx
+        return is_updated, new_tx, new_tx['hash']
 
     def add_to_failed_list(self, new_tx):
         new_tx['attempt'] = 0
@@ -172,31 +177,33 @@ class Quake:
 
     def handle_tx_basket(self, tx_basket):
         # TODO check that signatures list is the same and has not changed
-        updated_tx_basket_new = []
-        updated_tx_basket_seen = []
+        updated_tx_basket_old = []
+        updated_tx_basket_updated = []
         for new_tx in tx_basket['txs']:
             checked_tx = quake.check_tx(new_tx, tx_basket['node'])
             if checked_tx[0]:
-                is_new, tmp_tx = quake.add_to_tx_list(checked_tx[1])
-                if is_new:
-                    updated_tx_basket_seen.append(tmp_tx)
+                is_updated, tmp_tx, tx_hash = quake.add_to_tx_list(checked_tx[1])
+                # help.print_log((is_updated, tmp_tx))
+                if is_updated:
+                    updated_tx_basket_updated.append(tmp_tx)
                 else:
-                    updated_tx_basket_new.append(tmp_tx)
+                    if tmp_tx not in self.voted_tx:
+                        updated_tx_basket_old.append(tmp_tx)
             else:
                 quake.add_to_failed_list(checked_tx[1])
 
-        if updated_tx_basket_new:
-            send_tx_basket(main.dic_neighbours, updated_tx_basket_new, self.hash)
+        if updated_tx_basket_updated:
+            send_tx_basket(main.dic_neighbours, updated_tx_basket_updated, self.hash)
 
-        if updated_tx_basket_seen:
-            send_tx_basket(main.dic_neighbours, updated_tx_basket_new, self.hash, exclude_neigbors=(tx_basket['node']))
+        if updated_tx_basket_old:
+            send_tx_basket(main.dic_neighbours, updated_tx_basket_old, self.hash, exclude_neigbors=(tx_basket['node']))
 
     def request_tx_by_hash(self, tx_hash):
         for nbr in main.dic_neighbours:
             try:
-                response = requests.get('http://%s:%s/tx/info' % (nbr[1], peer_port(nbr[2])), params={'hash': tx_hash})
-            except ConnectionError as msg:
-                help.print_log(msg)
+                response = requests.get('http://%s:%s/tx/info' % (nbr[1], peer_port(nbr[2])), json={'hash': tx_hash})
+            except requests.RequestException as msg:
+                help.print_log(msg, False)
             else:
                 if response.status_code != 200:
                     continue
@@ -229,28 +236,18 @@ def send_tx_basket(neighbors, basket, node_hash, exclude_neigbors=()):
     }
 
     is_sent = False
-    help.print_log('here')
     for node_hash in neighbors:
         if node_hash in exclude_neigbors:
             continue
 
         try:
             response = requests.post('http://%s:%s/txs/basket' % (neighbors[node_hash][1],
-                                                                  peer_port(neighbors[node_hash][2])), data=txs_data)
-        except ConnectionError as msg:
-            help.print_log(msg)
+                                                                  peer_port(neighbors[node_hash][2])), json=txs_data)
+        except requests.RequestException as msg:
+            help.print_log(msg, False)
         else:
             if response.status_code == 200:
                 is_sent = True
-
-                txs = json.loads(response.text)
-                help.print_log(txs)
-                for new_tx in txs['txs']:
-                    checked_tx = quake.check_tx(new_tx, node_hash)
-                    if checked_tx[0]:
-                        quake.add_to_tx_list(checked_tx[1])
-                    else:
-                        quake.add_to_failed_list(checked_tx[1])
 
     if is_sent:
         quake.tx_basket = []
@@ -267,7 +264,7 @@ def chain():
 @app.route('/tx', methods=['POST'])
 def tx():
     # Tx from client
-    values = request.form
+    values = request.get_json(force=True)
     required = ['sender', 'receiver', 'amount', 'sequence']
 
     check_result = check_required(required, values)
@@ -288,7 +285,6 @@ def tx():
     else:
         quake.add_to_failed_list(checked_tx[1])
 
-
     return 'OK', 200
 
 
@@ -308,27 +304,23 @@ def tx():
 
 @app.route('/txs/basket', methods=['POST'])
 def txs_basket():
-    values = request.form
-    help.print_log(values)
-    required = ['node']
+    values = request.get_json(force=True)
+    required = ['node', 'txs']
     check_result = check_required(required, values)
     if check_result != -1:
         return check_result
 
-    response = {
-        'node': quake.hash,
-        'txs': list(quake.valid_tx.values()),
-    }
+    # TODO if the node is not in neighbor list already - notify in response (status code)
 
-    if 'txs' in values:
-        threading.Thread(target=quake.handle_tx_basket, args=(values, ))
+    if len(values['txs']):
+        threading.Thread(target=quake.handle_tx_basket, args=(values, )).start()
 
-    return jsonify(response), 200
+    return 'OK', 200
 
 
 @app.route('/tx/info', methods=['GET'])
 def tx_info():
-    values = request.args
+    values = request.get_json(force=True)
 
     required = ['hash']
     check_result = check_required(required, values)
