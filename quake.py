@@ -91,7 +91,7 @@ class Quake:
 
     def check_tx_basket(self, by_timer=True):
         # help.print_log((self.hash, 'basket', len(self.tx_basket), 'valid', len(self.valid_tx), 'failed', len(self.failed_tx),
-        #                 'voted', len(self.voted_tx), 'nbrs', len(main.dic_neighbours), 'nodes', len(main.dic_network_node)))
+        #                 'voted', len(self.voted_tx), 'nbrs', main.dic_neighbours.keys(), 'nodes', len(main.dic_network_node)))
         if not by_timer and len(self.tx_basket) < Quake.BASKET_SIZE:
             return
 
@@ -100,7 +100,7 @@ class Quake:
         self.send_basket_timer.daemon = True
         self.send_basket_timer.start()
 
-        threading.Thread(target=send_tx_basket, args=(main.dic_neighbours, self.tx_basket, self.hash)).start()
+        threading.Thread(target=send_tx_basket, args=(main.dic_neighbours.copy(), self.tx_basket, self.hash)).start()
 
     def verify_signature(self, pubkey, signature, tx_hash):
         key = RSA.importKey(pubkey.encode())
@@ -145,7 +145,7 @@ class Quake:
         new_tx['hash'] = tx_hash.hexdigest()
 
         if from_client:
-            help.print_log(('receiver', self.hash, 'tx', new_tx['hash']), file_name='stats.log', debug_mode=False)
+            # help.print_log((time.time(), 'receiver', self.hash, 'tx', new_tx['hash']), file_name='stats.log', file_log=False)
             f = open(new_tx['hash'] + '.log', 'w')
             f.write(str(time.time()))
             f.close()
@@ -175,7 +175,7 @@ class Quake:
 
         just_collected = False
         votes_ratio = len(new_tx['signatures']) / len(main.dic_network_node)
-        if votes_ratio > 2/3:
+        if votes_ratio >  2/3:
             is_updated = False
 
             if new_tx['hash'] not in self.voted_tx:
@@ -191,7 +191,7 @@ class Quake:
                     help.print_log((self.hash, 'sender', sender_node, 'tx', new_tx['hash'], 'sequence', new_tx['sequence'], 'requests_number',
                                     self.tx_requests_stats[new_tx['hash']]['requests'], 'time',
                                     time.time() - float(start_time), 'signatures', len(new_tx['signatures'])),
-                                   file_name='stats.log', debug_mode=True, file_log=False)
+                                   file_name='stats.log', debug_mode=False)
 
         if new_tx['hash'] in self.valid_tx:
             for item in new_tx['signatures']:
@@ -230,10 +230,10 @@ class Quake:
                 quake.add_to_failed_list(checked_tx[1])
 
         if updated_tx_basket:
-            send_tx_basket(main.dic_neighbours, updated_tx_basket, self.hash, just_collected=just_collected)
+            send_tx_basket(main.dic_neighbours.copy(), updated_tx_basket, self.hash, just_collected=just_collected)
 
         if old_tx_basket:
-            send_tx_basket(main.dic_neighbours, old_tx_basket, self.hash, exclude_neigbors=(tx_basket['node']), just_collected=just_collected)
+            send_tx_basket(main.dic_neighbours.copy(), old_tx_basket, self.hash, exclude_neigbors=(tx_basket['node']), just_collected=just_collected)
 
     def request_tx_by_hash(self, tx_hash):
         for nbr in main.dic_neighbours:
@@ -353,10 +353,10 @@ def txs_basket():
 
     # TODO if the node is not in neighbor list already - notify in response (status code)
 
-    if values['just_collected']:
-        # help.print_log((quake.hash, values['just_collected'], values['node']), file_log=False)
+    # if values['just_collected']:
+    # help.print_log((quake.hash, values['just_collected'], values['node']), file_log=False)
 
-        help.print_log((quake.hash, 'got it'), file_log=False)
+        # help.print_log((quake.hash, 'got it'), file_log=False)
 
     if len(values['txs']):
         threading.Thread(target=quake.handle_tx_basket, args=(values, )).start()
@@ -413,7 +413,7 @@ def start():
 
     quake.host = connect_host
     quake.port = connect_port
-
+    
     quake.update_chain()
 
     app.run(host=host, port=port)
