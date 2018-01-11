@@ -1,5 +1,6 @@
 from argparse import ArgumentParser
-from multiprocessing import Pool
+from subprocess import Popen
+
 import binascii, os, sys, requests, json, threading, time
 
 parser = ArgumentParser()
@@ -13,10 +14,18 @@ args = parser.parse_args()
 amount = args.amount
 start_port = args.start_port
 
+proc = None
+
 for i in range(amount):
     port_arg = start_port + i
     print('starting', port_arg)
-    threading.Thread(target=os.system, args=('python3 quake.py -p ' + str(port_arg), )).start()
+    proc = Popen(['python3', 'quake.py', '-p', str(port_arg)])
+    # threading.Thread(target=os.system, args=('python3 quake.py -p ' + str(port_arg), )).start()
     time.sleep(1)
 
 print('done')
+
+if proc:
+    proc.wait()
+
+
