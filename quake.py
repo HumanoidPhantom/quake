@@ -20,7 +20,7 @@ from flask import Flask, jsonify, request
 
 class Quake:
     BASKET_SEND_TIME = 30  # sec
-    SYNCHRONIZE_TIME = 1   # sec
+    SYNCHRONIZE_TIME = 2   # sec
     BASKET_SIZE = 1  # txs
     MAX_FAILED_TX_ATTEMPTS = 3
     PORT_DISTANCE = 1000
@@ -54,7 +54,7 @@ class Quake:
         self.send_basket_timer = threading.Timer(Quake.BASKET_SEND_TIME, self.check_tx_basket)
         self.send_basket_timer.daemon = True
 
-        self.synchronize_timer = threading.Timer(Quake.BASKET_SEND_TIME, self.synchronize_txs)
+        self.synchronize_timer = threading.Timer(Quake.SYNCHRONIZE_TIME, self.synchronize_txs)
         self.synchronize_timer.daemon = True
 
         # for debugging
@@ -143,7 +143,7 @@ class Quake:
 
         return response, new_tx
 
-    def add_to_tx_list(self, new_tx, from_client=False, sender_node=''):
+    def add_to_tx_list(self, new_tx, from_client=False, sender_node='', add_type=''):
         tx_hash = self.generate_tx_hash(new_tx)
         new_tx['hash'] = tx_hash.hexdigest()
 
@@ -170,7 +170,7 @@ class Quake:
 
             for item in new_tx['signatures']:
                 if item not in self.valid_tx[new_tx['hash']]['signatures']:
-                    is_updated = True
+                    # is_updated = True
                     self.valid_tx[new_tx['hash']]['signatures'][item] = new_tx['signatures'][item]
         else:
             self.valid_tx[new_tx['hash']] = new_tx
@@ -194,9 +194,9 @@ class Quake:
                     pass
                 else:
                     start_time = f.readline()
-                    help.print_log((self.hash, 'sender', sender_node, 'tx', new_tx['hash'], 'sequence', new_tx['sequence'], 'requests_number',
+                    help.print_log((self.hash, 'tx', new_tx['hash'], 'sequence', new_tx['sequence'], 'requests_number',
                                     self.tx_requests_stats[new_tx['hash']]['requests'], 'time',
-                                    time.time() - float(start_time), 'signatures', len(self.valid_tx[new_tx['hash']])),
+                                    time.time() - float(start_time), 'signatures', len(self.valid_tx[new_tx['hash']]['signatures'])),
                                    file_name='stats.log', debug_mode=False)
 
         if from_client:
@@ -217,13 +217,13 @@ class Quake:
         for new_tx in tx_basket['txs']:
             checked_tx = quake.check_tx(new_tx)
             if checked_tx[0]:
-                is_updated, tmp_tx, tx_hash, just_collected = quake.add_to_tx_list(checked_tx[1], sender_node=tx_basket['node'])
+                is_updated, tmp_tx, tx_hash, just_collected = quake.add_to_tx_list(checked_tx[1], sender_node=tx_basket['node'], add_type='handle the basket')
 
                 if is_updated:
                     updated_tx_basket.append(tmp_tx)
-                else:
-                    if tx_hash not in self.voted_tx:
-                        old_tx_basket.append(tmp_tx)
+                # else:
+                #     if tx_hash not in self.voted_tx:
+                #         old_tx_basket.append(tmp_tx)
             else:
                 quake.add_to_failed_list(checked_tx[1])
 
@@ -247,34 +247,53 @@ class Quake:
         return {}
 
     def synchronize_txs(self):
-        pass
-        # txs_data = {
-        #     'node': self.hash,
-        #     'txs': basket,
-        #     'just_collected': just_collected
-        # }
-        #
-        # is_sent = False
-        # for node_hash in neighbors:
-        #     if node_hash in exclude_neigbors:
-        #         continue
-        #
-        #     try:
-        #         response = requests.post('http://%s:%s/txs/basket' % (neighbors[node_hash][1],
-        #                                                               peer_port(neighbors[node_hash][2])),
-        #                                  json=txs_data)
-        #     except requests.RequestException as msg:
-        #         help.print_log(msg, False, file_log=False)
-        #     else:
-        #         if response.status_code == 200:
-        #             is_sent = True
-        #
-        # if is_sent:
-        #     quake.tx_basket = []
-        #
-        # neighbors = main.dic_neighbours.copy()
-        # for neighbor in neighbors:
 
+        check_txs = {}
+        valid_txs = self.valid_tx.copy()
+        for item in valid_txs:
+            if item not in self.voted_tx:
+                check_txs[item] = valid_txs[item]
+
+        if check_txs:
+            txs_data = {
+                'node': self.hash,
+                'txs': check_txs,
+            }
+            neighbors = main.dic_neighbours.copy()
+
+            for node_hash in neighbors:
+                try:
+                    response = requests.post('http://%s:%s/txs/update' % (neighbors[node_hash][1],
+                                                                          peer_port(neighbors[node_hash][2])),
+                                             json=txs_data)
+                except requests.RequestException as msg:
+                    help.print_log(msg, False, file_log=False)
+                else:
+                    if response.status_code == 200:
+                        txs = json.loads(response.text)
+                        for item in txs:
+                            if item in self.valid_tx:
+                                updated_tx = self.valid_tx[item].copy()
+                                updated_tx['signatures'] = txs[item]
+                                if self.check_signatures(updated_tx):
+                                    self.add_to_tx_list(updated_tx, add_type='response from another node to synchronize request')
+
+        self.synchronize_timer = threading.Timer(Quake.SYNCHRONIZE_TIME, self.synchronize_txs)
+        self.synchronize_timer.daemon = True
+        self.synchronize_timer.start()
+
+    def txs_info(self, values):
+        response = {}
+        for item in values['txs']:
+            result, new_tx = self.check_tx(values['txs'][item])
+
+            if result:
+                self.add_to_tx_list(values['txs'][item], sender_node=values['node'], add_type='request from another node to synchronize')
+
+            if item in self.valid_tx:
+                response[item] = self.valid_tx[item]['signatures']
+
+        return response
 
 
 app = Flask(__name__)
@@ -349,7 +368,7 @@ def tx():
 
     checked_tx = quake.check_tx(new_tx)
     if checked_tx[0]:
-        quake.add_to_tx_list(checked_tx[1], from_client=True)
+        quake.add_to_tx_list(checked_tx[1], from_client=True, add_type='received from client')
         quake.check_tx_basket(by_timer=False)
     else:
         quake.add_to_failed_list(checked_tx[1])
@@ -390,6 +409,21 @@ def txs_basket():
         threading.Thread(target=quake.handle_tx_basket, args=(values, )).start()
 
     return 'OK', 200
+
+
+@app.route('/txs/update', methods=['POST'])
+def txs_update():
+    values = request.get_json(force=True)
+    required = ['node', 'txs']
+    check_result = check_required(required, values)
+    if check_result != -1:
+        return check_result
+
+    # TODO if the node is not in neighbor list already - notify in response (status code)
+
+    response = quake.txs_info(values)
+
+    return jsonify(response), 200
 
 
 @app.route('/tx/info', methods=['GET'])
