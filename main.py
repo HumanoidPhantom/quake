@@ -17,7 +17,7 @@ list_sockets = {}
 list_addr = {}
 th = {}
 
-MIN_NEIGHBORS = 5
+MIN_NEIGHBORS = 4
 
 list_network_node = []
 dic_network_node ={}
@@ -163,13 +163,13 @@ class mainNei:
 					if class_method == 0:
 
 						NaN.connectRequestUpload(conn,publicKey,dic_network_node)
-						
+
 
 					elif class_method == 1:
 						id_newNode = info[0]
 						info = [info[1],info[2],info[3]]
 						self.updateLun(id_newNode, info)
-					
+
 
 					elif class_method == 7:
 						if node_id in list_neighbours:
@@ -203,7 +203,7 @@ class mainNei:
 				else:
 					break
 			else:
-				break	
+				break
 
 		
 
