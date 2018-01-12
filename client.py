@@ -1,5 +1,6 @@
 from argparse import ArgumentParser
 import binascii, os, sys, requests, json
+import time
 
 parser = ArgumentParser()
 
@@ -46,7 +47,9 @@ print('Your address: ' + sender)
 while True:
     command = input('Enter the command ([send], [quit]): ')
     if command == 'send':
+        timer = time.time()
         send()
+        print(time.time() - timer)
     elif command == 'quit':
         print('Bye')
         sys.exit()

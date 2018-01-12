@@ -226,7 +226,7 @@ class Quake:
                 #         old_tx_basket.append(tmp_tx)
             else:
                 quake.add_to_failed_list(checked_tx[1])
-        help.print_log((self.hash, updated_tx_basket), file_log=True, file_name='updated_tx_basket.txt', debug_mode=False)
+        help.print_log((self.hash, updated_tx_basket), file_log=True, file_name='updated_tx_basket.log', debug_mode=False)
         if updated_tx_basket:
             send_tx_basket(main.dic_neighbours.copy(), updated_tx_basket, self.hash, just_collected=just_collected)
 
