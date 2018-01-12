@@ -77,7 +77,7 @@ class mainNei:
 
 
 
-	def checkStatus(self):
+	def checkStatus(self, ipaddr_to_connect='127.0.0.1'):
 
 	#cn = input('Do you want to connect to network?Y/n\n')
 	#if cn == 'Y':
@@ -87,7 +87,7 @@ class mainNei:
 			if len(list_network_node)<2:
 				#ip_request_node = input('Type IP address of Node\n')
 				#port_request_node = input('Type Port of Node\n')
-				ip_request_node = '127.0.0.1'
+				ip_request_node = ipaddr_to_connect
 				port_request_node =30001
 				dic_network_node_temp = NaN.connectRequestDownload(ip_request_node,port_request_node,publicKey)
 				dic_network_node.update(dic_network_node_temp)
@@ -208,18 +208,18 @@ class mainNei:
 		
 
 
-	def listen(self, port):
+	def listen(self, port, host_val='127.0.0.1', ipaddr_to_connect='127.0.0.1'):
 
 		serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,1)
 
-		host = '127.0.0.1'
+		host = host_val
 		#port = 30001
 		try:
 			serversocket.bind((host,int(port)))
 			serversocket.listen(5)
 			if port != '30001':
-				th_init = threading.Thread(target = main_nei.checkStatus, args= ())
+				th_init = threading.Thread(target = main_nei.checkStatus, args= (ipaddr_to_connect,))
 				th_init.start()
 			else:
 				pass
@@ -244,6 +244,7 @@ th_main = None
 th_init = None
 main_nei = mainNei()
 ipaddr = ''
+ipaddr_to_connect = ''
 def run():
 	global th_main
 	global th_init
@@ -251,7 +252,7 @@ def run():
 	global dic_network_node
 	dic_network_node[str(publicKey)][2] = port
 	dic_network_node[str(publicKey)][1] = ipaddr
-	th_main = threading.Thread(target=main_nei.listen, args=(port,))
+	th_main = threading.Thread(target=main_nei.listen, args=(port,ipaddr, ipaddr_to_connect))
 	th_main.daemon = True
 	th_main.start()
 
