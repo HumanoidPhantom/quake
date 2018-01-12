@@ -13,6 +13,9 @@ import threading
 import time
 import requests
 
+# TODO neighbors 401 error - find other neighbors
+# TODO connection refused - deal with not responding node
+
 
 class Quake:
     BASKET_SEND_TIME = 30  # sec
@@ -35,6 +38,7 @@ class Quake:
         self.signer = PKCS1_v1_5.new(self.key)
 
         self.blockchain = Blockchain(self.key, self.signer, self.hash)
+
         # nodes list in main.dic_network_node
         # dict. change in code where list is assumed
         # self.nodes = [self.identity]
@@ -73,7 +77,7 @@ class Quake:
         # TODO verify that chain is correct if node is not new
         if self.host:
             try:
-                response = requests.get('https://%s:%s/chain' % (self.host, self.port))
+                response = requests.get('https://%s:%s/chain' % (self.host, self.port), json={'node': self.hash})
             except requests.RequestException as msg:
                 help.print_log(msg, False, file_log=False)
             else:
@@ -86,12 +90,6 @@ class Quake:
         h.update(('%s%s%s%s' % (new_tx['sender'], new_tx['receiver'], new_tx['amount'], new_tx['sequence']))
                  .encode())
         return h
-
-    # def check_hash(self, pubkey, node):
-    #     # fix
-    #     node_hash = self.generate_node_hash(pubkey)
-    #
-    #     return node_hash == node
 
     def check_tx_basket(self, by_timer=True):
         # help.print_log((self.hash, 'basket', len(self.tx_basket), 'valid', len(self.valid_tx), 'failed', len(self.failed_tx),
@@ -115,6 +113,7 @@ class Quake:
         return -1
 
     def check_signatures(self, new_tx):
+        # TODO now any invalid signature will lead to non-acception of the tx. Fix this, so that the signature just would not count
         tx_hash = self.generate_tx_hash(new_tx)
         result = True
         for item in new_tx['signatures']:
@@ -229,10 +228,10 @@ class Quake:
         if old_tx_basket:
             send_tx_basket(main.dic_neighbours, old_tx_basket, self.hash, exclude_neigbors=(tx_basket['node']), just_collected=just_collected)
 
-    def request_tx_by_hash(self, tx_hash):
+    def request_txs_by_hash(self, tx_hash):
         for nbr in main.dic_neighbours:
             try:
-                response = requests.get('http://%s:%s/tx/info' % (nbr[1], peer_port(nbr[2])), json={'hash': tx_hash})
+                response = requests.get('http://%s:%s/txs/info' % (nbr[1], peer_port(nbr[2])), json={'hash': tx_hash, 'node': self.hash})
             except requests.RequestException as msg:
                 help.print_log(msg, False, file_log=False)
             else:
@@ -243,10 +242,6 @@ class Quake:
         return {}
 
     def synchronize_txs(self):
-        # TODO also update voting basket info
-        # TODO full data. if round has changed - change own round - that would be verified by signature's list.
-        # So request all voting basket
-
         check_txs = {}
         valid_txs = self.valid_tx.copy()
         for item in valid_txs:
@@ -274,9 +269,11 @@ class Quake:
                         for item in data['txs']:
                             if item in self.valid_tx:
                                 updated_tx = self.valid_tx[item].copy()
-                                updated_tx['signatures'] = txs[item]
+                                updated_tx['signatures'] = data['txs'][item]
                                 if self.check_signatures(updated_tx):
                                     self.add_to_tx_list(updated_tx, add_type='response from another node to synchronize request')
+
+                        self.update_known_data(data['voted_txs'], len(main.dic_network_node), check_update_requests=False)
 
         self.synchronize_timer = threading.Timer(Quake.SYNCHRONIZE_TIME, self.synchronize_txs)
         self.synchronize_timer.daemon = True
@@ -285,7 +282,7 @@ class Quake:
     def txs_info(self, values):
         response = {
             'txs': {},
-            'voted': {}
+            'voted_txs': {}
         }
         for item in values['txs']:
             result, new_tx = self.check_tx(values['txs'][item])
@@ -296,18 +293,17 @@ class Quake:
             if item in self.valid_tx:
                 response[item] = self.valid_tx[item]['signatures']
 
-        response['voted'] = self.blockchain.update_known_data(values['voted_txs'])
+        response['voted_txs'] = self.update_known_data(values['voted_txs'], len(main.dic_network_node))
 
         return response
 
-    def find_min_voting_block(self):
-        return min(self.blockchain.known_voting_blocks.keys())
+    def find_min_voting_block(self, known=()):
+        return min(known) if known else min(self.blockchain.known_voting_blocks.keys())
 
     # def count_votes_number(self):
     #     known_blocks = self.blockchain.
 
     def check_voting_basket(self, by_timer=True):
-        # TODO remove from voting, valid lists when the block is appended to the chain
         if not by_timer and len(self.voted_tx) < Quake.VOTED_TX_SIZE or len(self.blockchain.voting_basket):
             return
 
@@ -334,6 +330,192 @@ class Quake:
                                                          peer_port(neighbors[node_hash][2])), json=txs_data)
             except requests.RequestException as msg:
                 help.print_log(msg, False, file_log=False)
+
+    def verify_basket_signatures(self, new_voted_txs):
+        result = True
+        txs_data = {}
+        last_block_hash = self.hash(self.blockchain.last_block)
+
+        for tx_basket in new_voted_txs:
+            # TODO how peer could understand that its blockchain is out of date and there are new blocks already
+            if last_block_hash != tx_basket['previous_block_hash']:
+                continue
+
+            all_tx_updated = self.check_transactions(tx_basket['transactions'])
+            if not all_tx_updated:
+                continue
+
+            txs_hash = self.blockchain.voting_basket_hash(tx_basket['transactions'])
+            signs_counter = {}
+
+            for round_number in tx_basket['basket_signatures']:
+                basket_hash = self.blockchain.generate_full_basket_hash(txs_hash, tx_basket['previous_block_hash'],
+                                                                        str(round_number))
+                if round_number not in signs_counter:
+                    signs_counter[round_number] = 0
+
+                for signature in tx_basket['basket_signatures'][round_number]:
+                    # TODO now any invalid signature would lead to non-acception of the block. Fix to just not counting the signature
+                    result &= self.blockchain.verify_signature(self.key, signature, basket_hash)
+                    signs_counter[round_number] += 1
+
+            txs_data = {
+                txs_hash: {'result': result, 'signs_counter': signs_counter}
+            }
+
+        return txs_data
+
+    def check_transactions(self, transactions):
+        request_txs = []
+        for tx_hash in transactions:
+            if tx_hash not in self.voted_tx:
+                request_txs.append(tx_hash)
+
+        if not request_txs:
+            return True
+
+        response = self.request_txs_by_hash(request_txs)
+
+        if response:
+            for tx_hash in response:
+                success, tmp_tx = self.check_tx(response[tx_hash])
+                if success:
+                    self.add_to_tx_list(tmp_tx)
+                    if tx_hash in self.voted_tx:
+                        try:
+                            request_txs.remove(tx_hash)
+                        except ValueError:
+                            pass
+
+            if not request_txs:
+                return True
+
+        return False
+
+    # voting for new block (list and order of txs)
+    def update_known_data(self, new_voted_txs, nodes_number, check_update_requests=True):
+        global_signs_counter = {}
+        new_block = {}
+        txs_data = self.verify_basket_signatures(new_voted_txs)
+
+        known = self.blockchain.known_voting_blocks.copy()
+
+        for txs_hash, data in txs_data.values():
+            # TODO how to deal with double spending
+
+            if not data['result']:
+                continue
+
+            item = new_voted_txs[txs_hash]
+            if txs_hash in known:
+                for round_number in known[txs_hash]:
+                    data['signs_counter'][round_number] = len(known[txs_hash][round_number])
+                    if round_number in item['basket_signatures']:
+                        for node in item['basket_signatures'][round_number]:
+                            known[txs_hash][round_number][node] = item['basket_signatures'][round_number][node]
+            else:
+                known[txs_hash] = item
+
+            for round_number, counter in data['signs_counter'].items():
+                if counter / nodes_number > 2/3:
+                    new_block = item
+                    new_block['round'] = round_number
+
+                if round_number not in global_signs_counter:
+                    global_signs_counter[round_number] = []
+
+                global_signs_counter[round_number].append(data['signs_counter'][round_number])
+
+        if new_block:
+            self.add_block_to_chain(new_block)
+        else:
+            active_round = self.blockchain.active_round
+            for round_number, count_list in global_signs_counter.items():
+                if round_number < active_round:
+                    continue
+
+                not_voted_count = nodes_number - sum(count_list)
+
+                to_change_round = True
+                for item in count_list:
+                    if (not_voted_count + item) / nodes_number > 2/3:
+                        to_change_round = False
+
+                if to_change_round:
+                    active_round = round_number + 1
+
+            if active_round > self.blockchain.active_round:
+                for i in range(active_round):
+                    for tx_hash in known:
+                        if i in known[tx_hash]['basket_signatures']:
+                            del known[tx_hash]['basket_signatures'][i]
+
+            if active_round == self.blockchain.active_round and self.blockchain.voting_block_hash and  \
+                                known == self.blockchain.known_voting_blocks:
+                self.blockchain.no_change_requests += 1
+            else:
+                self.blockchain.no_change_requests = 0
+
+            if check_update_requests and self.blockchain.no_change_requests > 2:
+                active_round += 1
+
+            if active_round > self.blockchain.active_round or (active_round == 0 and not self.blockchain.voting_block_hash):
+                min_hash = self.find_min_voting_block(known.keys())
+                self.blockchain.voting_block_hash = min_hash
+                self.blockchain.voting_basket = known[min_hash]['transactions']
+                if active_round not in known[min_hash]:
+                    known[min_hash][active_round] = {}
+
+                known[min_hash][active_round][self.hash] = str(self.blockchain.sign_basket(active_round))
+
+        self.blockchain.known_voting_blocks = known
+
+        return list(known.values())
+
+    def add_block_to_chain(self, block):
+        transactions = []
+        for tx_hash in block['transactions']:
+            transactions.append(self.valid_tx[tx_hash])
+        self.blockchain.new_block(transactions, block['previous_block_hash'], block['round'])
+
+        self.start_new_blockchain_round(block['transactions'])
+
+    def start_new_blockchain_round(self, txs):
+        self.blockchain.start_new_blockchain_round()
+        # TODO is it needed to re-validate txs and drop old signatures? how to behave in this case
+
+        # self.voted_tx = []
+        self.tx_requests_stats = {}
+
+        for tx_hash in txs:
+            if tx_hash in self.voted_tx:
+                self.voted_tx.remove(tx_hash)
+            del self.valid_tx[tx_hash]
+
+        failed_txs = self.failed_tx.copy()
+        self.failed_tx = []
+
+        # valid_txs = self.valid_tx.copy()
+        # self.valid_tx = {}
+
+        for tx_item in failed_txs:
+            if tx_item['attempt'] > 2:
+                continue
+
+            result, new_tx = self.check_tx(tx_item)
+            if result:
+                del new_tx['attempt']
+                self.add_to_tx_list(new_tx)
+            else:
+                new_tx['attempt'] += 1
+                self.failed_tx.append(new_tx)
+
+        # for tx_item in valid_txs.values():
+        #     result, new_tx = self.check_tx(tx_item)
+        #     if result:
+        #         self.add_to_tx_list(new_tx)
+
+
 
 
 app = Flask(__name__)
@@ -389,6 +571,15 @@ def send_tx_basket(neighbors, basket, node_hash, exclude_neigbors=(), just_colle
 @app.route('/chain', methods=['GET'])
 def chain():
     # Get the list of peers
+    values = request.get_json(force=True)
+    required = ['node']
+    check_result = check_required(required, values)
+    if check_result != -1:
+        return check_result
+
+    if values['node'] not in main.dic_neighbours:
+        return 'Not neighbor', 401
+
     response = quake.blockchain.chain
 
     return jsonify(response), 200
@@ -402,6 +593,9 @@ def tx():
     check_result = check_required(required, values)
     if check_result != -1:
         return check_result
+
+    if values['node'] not in main.dic_neighbours:
+        return 'Not neighbor', 401
 
     new_tx = {
         'sender': values['sender'],
@@ -420,20 +614,6 @@ def tx():
     return 'OK', 200
 
 
-# @app.route('/neighbor', methods=['POST'])
-# def neighbor():
-#     # Receive node's identity. Become a neighbor
-#     values = request.get_json()
-#     required = ['hash', 'pubkey', 'host', 'port']
-#
-#     check_result = check_required(required, values)
-#     if check_result != -1:
-#         return check_result
-#
-#     response = {}
-#     return jsonify(response), 200
-
-
 @app.route('/txs/basket', methods=['POST'])
 def txs_basket():
     values = request.get_json(force=True)
@@ -442,7 +622,8 @@ def txs_basket():
     if check_result != -1:
         return check_result
 
-    # TODO if the node is not in neighbor list already - notify in response (status code)
+    if values['node'] not in main.dic_neighbours:
+        return 'Not neighbor', 401
 
     # if values['just_collected']:
     # help.print_log((quake.hash, values['just_collected'], values['node']), file_log=False)
@@ -457,8 +638,22 @@ def txs_basket():
 
 @app.route('/txs/vote', methods=['POST'])
 def txs_vote():
-    # TODO
-    pass
+    values = request.get_json(force=True)
+    required = ['node', 'txs']
+
+    check_result = check_required(required, values)
+    if check_result != -1:
+        return check_result
+
+    if values['node'] not in main.dic_neighbours:
+        return 'Not neighbor', 401
+
+    block_hash = quake.blockchain.voting_basket_hash(values['txs'])
+    voting_block = quake.blockchain.create_voting_block(0)
+
+    quake.update_known_data({block_hash: voting_block}, len(main.dic_network_node))
+
+    return 'OK', 200
 
 
 @app.route('/txs/update', methods=['POST'])
@@ -469,27 +664,35 @@ def txs_update():
     if check_result != -1:
         return check_result
 
-    # TODO if the node is not in neighbor list already - notify in response (status code)
-    # TODO deal with voted blocks + own vote if is not done yet
+    if values['node'] not in main.dic_neighbours:
+        return 'Not neighbor', 401
+
     response = quake.txs_info(values)
 
     return jsonify(response), 200
 
 
-@app.route('/tx/info', methods=['GET'])
+@app.route('/txs/info', methods=['GET'])
 def tx_info():
     values = request.get_json(force=True)
 
-    required = ['hash']
+    required = ['txs', 'node']
     check_result = check_required(required, values)
     if check_result != -1:
         return check_result
 
-    if values['hash'] in quake.voted_tx:
-        response = quake.voted_tx[values['hash']]
-        return jsonify(response), 200
+    if values['node'] not in main.dic_neighbours:
+        return 'Not neighbor', 401
 
-    return 'Not found', 404
+    response = {}
+    for tx_hash in values['txs']:
+        if tx_hash in quake.voted_tx:
+            response[tx_hash] = quake.voted_tx[values['hash']]
+
+    if response:
+        return jsonify(response), 200
+    else:
+        return 'Not found', 404
 
 
 def start():

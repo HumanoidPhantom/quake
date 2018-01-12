@@ -31,7 +31,7 @@ def send():
     for i in range(messages_number):
         tx = {
             'sender': sender,
-            'receiver': receiver if receiver else binascii.b2a_hex(os.urandom(10)),
+            'receiver': receiver if receiver else binascii.b2a_hex(os.urandom(10)).decode(),
             'amount': 1,
             'sequence': sequence
         }
