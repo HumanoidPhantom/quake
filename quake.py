@@ -16,7 +16,7 @@ import time
 
 import requests
 from flask import Flask, jsonify, request
-
+import binascii
 
 class Quake:
     BASKET_SEND_TIME = 30  # sec
@@ -214,11 +214,15 @@ class Quake:
         old_tx_basket = []
         updated_tx_basket = []
         just_collected = False
+        timer = time.time()
+        updated_info = True
         for new_tx in tx_basket['txs']:
             checked_tx = quake.check_tx(new_tx)
             if checked_tx[0]:
                 is_updated, tmp_tx, tx_hash, just_collected = quake.add_to_tx_list(checked_tx[1], sender_node=tx_basket['node'], add_type='handle the basket')
-
+                if just_collected:
+                    print(time.time() - timer, self.hash, 'tx:', tx_hash)
+                updated_info &= updated_info
                 if is_updated:
                     updated_tx_basket.append(tmp_tx)
                 # else:
@@ -226,7 +230,10 @@ class Quake:
                 #         old_tx_basket.append(tmp_tx)
             else:
                 quake.add_to_failed_list(checked_tx[1])
-        help.print_log((self.hash, updated_tx_basket), file_log=True, file_name='updated_tx_basket.log', debug_mode=False)
+        if updated_info:
+            print('final result', time.time() - timer, self.hash)
+
+        # help.print_log((self.hash, updated_tx_basket), file_log=True, file_name='updated_tx_basket.log', debug_mode=False)
         if updated_tx_basket:
             send_tx_basket(main.dic_neighbours.copy(), updated_tx_basket, self.hash, just_collected=just_collected)
 
