@@ -22,7 +22,7 @@ class Quake:
     START_VOTING_TIME = 30 # sec
     SYNCHRONIZE_TIME = 2   # sec
     BASKET_SIZE = 1  # txs
-    VOTED_TX_SIZE = 10 # txs
+    VOTED_TX_SIZE = 2  # txs
     MAX_FAILED_TX_ATTEMPTS = 3
     PORT_DISTANCE = 1000
 
@@ -189,7 +189,7 @@ class Quake:
                     pass
                 else:
                     start_time = f.readline()
-                    help.print_log((self.hash, 'tx', new_tx['hash'], 'sequence', new_tx['sequence'], 'requests_number',
+                    help.print_log(('voting', self.hash, 'tx', new_tx['hash'], 'sequence', new_tx['sequence'], 'requests_number',
                                     self.tx_requests_stats[new_tx['hash']]['requests'], 'time',
                                     time.time() - float(start_time), 'signatures', len(self.valid_tx[new_tx['hash']]['signatures'])),
                                    file_name='stats.log', debug_mode=False)
@@ -476,7 +476,19 @@ class Quake:
         transactions = []
         for tx_hash in block['transactions']:
             transactions.append(self.valid_tx[tx_hash])
-        self.blockchain.new_block(transactions, block['previous_block_hash'], block['round'])
+        new_block = self.blockchain.new_block(transactions, block['previous_block_hash'], block['round'])
+
+        try:
+            f = open(transactions[0] + '.log', 'r')
+        except:
+            pass
+        else:
+            start_time = f.readline()
+
+            help.print_log(('update blockchain', self.hash, 'requests_number',
+                        'time',
+                        time.time() - float(start_time), new_block),
+                       file_name='stats-new-block.log', debug_mode=False)
 
         self.start_new_blockchain_round(block['transactions'])
 
