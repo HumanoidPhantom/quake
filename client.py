@@ -5,14 +5,14 @@ import time
 parser = ArgumentParser()
 
 parser.add_argument('-H', '--host', default='127.0.0.1', type=str, help='ip to send tx to (127.0.0.1 by default)')
-parser.add_argument('-p', '--port', default=29001, type=int, help='port (49001 by default)')
+parser.add_argument('-p', '--port', default=30001, type=int, help='port (49001 by default)')
 
 parser.add_argument('-s', '--sender', default='', type=str, help='Sender address (hex string)')
 
 args = parser.parse_args()
 
 host = args.host
-port = args.port
+port = args.port - 1000
 
 sender = args.sender if args.sender != '' else binascii.b2a_hex(os.urandom(10)).decode()
 sequence = 0
