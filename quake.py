@@ -594,9 +594,6 @@ def tx():
     if check_result != -1:
         return check_result
 
-    if values['node'] not in main.dic_neighbours:
-        return 'Not neighbor', 401
-
     new_tx = {
         'sender': values['sender'],
         'receiver': values['receiver'],
