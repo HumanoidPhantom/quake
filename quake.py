@@ -472,6 +472,7 @@ def start():
     host = args.host
     port = args.port - Quake.PORT_DISTANCE
     main.port = str(args.port)
+    main.ipaddr = host
 
     main.run()
 

@@ -243,13 +243,14 @@ class mainNei:
 th_main = None
 th_init = None
 main_nei = mainNei()
-
+ipaddr = ''
 def run():
 	global th_main
 	global th_init
 	global main_nei
 	global dic_network_node
 	dic_network_node[str(publicKey)][2] = port
+	dic_network_node[str(publicKey)][1] = ipaddr
 	th_main = threading.Thread(target=main_nei.listen, args=(port,))
 	th_main.daemon = True
 	th_main.start()
