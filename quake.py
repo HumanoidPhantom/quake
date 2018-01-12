@@ -1,27 +1,25 @@
 import sys
+from flask import Flask, jsonify, request
 from Crypto.PublicKey import RSA
 from Crypto.Signature import PKCS1_v1_5
 from Crypto.Hash import SHA
+
 from blockchain import Blockchain
+import main, help
 from uuid import uuid4
-import hashlib
 import base64
 import json
-from operator import itemgetter
 import threading
-import atexit
-import main
-import help
 import time
-
 import requests
-from flask import Flask, jsonify, request
 
 
 class Quake:
     BASKET_SEND_TIME = 30  # sec
+    START_VOTING_TIME = 30 # sec
     SYNCHRONIZE_TIME = 2   # sec
     BASKET_SIZE = 1  # txs
+    VOTED_TX_SIZE = 10 # txs
     MAX_FAILED_TX_ATTEMPTS = 3
     PORT_DISTANCE = 1000
 
@@ -32,11 +30,11 @@ class Quake:
         self.__port = ''
         self.hash = main.publicKey
         self.neighbors = neighbors
-        self.blockchain = Blockchain()
 
         self.key = main.privateKey
         self.signer = PKCS1_v1_5.new(self.key)
 
+        self.blockchain = Blockchain(self.key, self.signer, self.hash)
         # nodes list in main.dic_network_node
         # dict. change in code where list is assumed
         # self.nodes = [self.identity]
@@ -56,6 +54,9 @@ class Quake:
 
         self.synchronize_timer = threading.Timer(Quake.SYNCHRONIZE_TIME, self.synchronize_txs)
         self.synchronize_timer.daemon = True
+
+        self.send_voting_basket_timer = threading.Timer(Quake.START_VOTING_TIME, self.check_voting_basket)
+        self.send_voting_basket_timer .daemon = True
 
         # for debugging
         self.tx_requests_stats = {}
@@ -103,12 +104,7 @@ class Quake:
         self.send_basket_timer.daemon = True
         self.send_basket_timer.start()
 
-        threading.Thread(target=send_tx_basket, args=(main.dic_neighbours.copy(), self.tx_basket, self.hash)).start()
-
-    def verify_signature(self, pubkey, signature, tx_hash):
-        key = RSA.importKey(pubkey.encode())
-        verifier = PKCS1_v1_5.new(key)
-        return verifier.verify(tx_hash, base64.b64decode(signature.encode()))
+        threading.Thread(target=send_tx_basket, args=(main.dic_neighbours.copy(), self.tx_basket.copy(), self.hash)).start()
 
     def find_tx(self, tx_hash):
         txs = [index for index in range(len(self.tx_basket)) if self.tx_basket[index]['hash'] == tx_hash]
@@ -125,7 +121,7 @@ class Quake:
             if item not in main.dic_network_node:
                 continue
             node = main.dic_network_node[item]
-            result &= self.verify_signature(node[0], new_tx['signatures'][item], tx_hash)
+            result &= self.blockchain.verify_signature(node[0], new_tx['signatures'][item], tx_hash)
 
         return result
 
@@ -247,6 +243,9 @@ class Quake:
         return {}
 
     def synchronize_txs(self):
+        # TODO also update voting basket info
+        # TODO full data. if round has changed - change own round - that would be verified by signature's list.
+        # So request all voting basket
 
         check_txs = {}
         valid_txs = self.valid_tx.copy()
@@ -258,6 +257,7 @@ class Quake:
             txs_data = {
                 'node': self.hash,
                 'txs': check_txs,
+                'voted_txs': list(self.blockchain.known_voting_blocks.values())
             }
             neighbors = main.dic_neighbours.copy()
 
@@ -294,6 +294,41 @@ class Quake:
                 response[item] = self.valid_tx[item]['signatures']
 
         return response
+
+    def find_min_voting_block(self):
+        return min(self.blockchain.known_voting_blocks.keys())
+
+    # def count_votes_number(self):
+    #     known_blocks = self.blockchain.
+
+    def check_voting_basket(self, by_timer=True):
+        # TODO remove from voting, valid lists when the block is appended to the chain
+        if not by_timer and len(self.voted_tx) < Quake.VOTED_TX_SIZE or len(self.blockchain.voting_basket):
+            return
+
+        self.send_voting_basket_timer.cancel()
+
+        self.blockchain.add_to_voting_basket(self.voted_tx.copy(), Quake.VOTED_TX_SIZE)
+
+        threading.Thread(target=self.send_voting_basket, args=(main.dic_neighbours.copy(), self.blockchain.voting_basket[:],
+                                                               self.hash)).start()
+
+        self.send_voting_basket_timer = threading.Timer(Quake.START_VOTING_TIME, self.check_voting_basket)
+        self.send_voting_basket_timer.daemon = True
+        self.send_voting_basket_timer.start()
+
+    def send_voting_basket(self, neighbors, voted_tx, node_hash):
+        txs_data = {
+            'node': node_hash,
+            'txs': voted_tx,
+        }
+
+        for node_hash in neighbors:
+            try:
+                requests.post('http://%s:%s/txs/vote' % (neighbors[node_hash][1],
+                                                         peer_port(neighbors[node_hash][2])), json=txs_data)
+            except requests.RequestException as msg:
+                help.print_log(msg, False, file_log=False)
 
 
 app = Flask(__name__)
@@ -339,7 +374,11 @@ def send_tx_basket(neighbors, basket, node_hash, exclude_neigbors=(), just_colle
                 is_sent = True
 
     if is_sent:
-        quake.tx_basket = []
+        for item in basket:
+            try:
+                quake.tx_basket.remove(item)
+            except ValueError:
+                pass
 
 
 @app.route('/chain', methods=['GET'])
@@ -409,6 +448,12 @@ def txs_basket():
         threading.Thread(target=quake.handle_tx_basket, args=(values, )).start()
 
     return 'OK', 200
+
+
+@app.route('/txs/vote', methods=['POST'])
+def txs_vote():
+    # TODO
+    pass
 
 
 @app.route('/txs/update', methods=['POST'])
