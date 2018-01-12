@@ -270,8 +270,8 @@ class Quake:
                     help.print_log(msg, False, file_log=False)
                 else:
                     if response.status_code == 200:
-                        txs = json.loads(response.text)
-                        for item in txs:
+                        data = json.loads(response.text)
+                        for item in data['txs']:
                             if item in self.valid_tx:
                                 updated_tx = self.valid_tx[item].copy()
                                 updated_tx['signatures'] = txs[item]
@@ -283,7 +283,10 @@ class Quake:
         self.synchronize_timer.start()
 
     def txs_info(self, values):
-        response = {}
+        response = {
+            'txs': {},
+            'voted': {}
+        }
         for item in values['txs']:
             result, new_tx = self.check_tx(values['txs'][item])
 
@@ -292,6 +295,8 @@ class Quake:
 
             if item in self.valid_tx:
                 response[item] = self.valid_tx[item]['signatures']
+
+        response['voted'] = self.blockchain.update_known_data(values['voted_txs'])
 
         return response
 
@@ -459,13 +464,13 @@ def txs_vote():
 @app.route('/txs/update', methods=['POST'])
 def txs_update():
     values = request.get_json(force=True)
-    required = ['node', 'txs']
+    required = ['node', 'txs', 'voted_txs']
     check_result = check_required(required, values)
     if check_result != -1:
         return check_result
 
     # TODO if the node is not in neighbor list already - notify in response (status code)
-
+    # TODO deal with voted blocks + own vote if is not done yet
     response = quake.txs_info(values)
 
     return jsonify(response), 200
