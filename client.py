@@ -28,7 +28,7 @@ def send():
         messages_number = int(messages_number)
     except ValueError:
         messages_number = 1
-
+    timer = time.time()
     for i in range(messages_number):
         tx = {
             'sender': sender,
@@ -41,15 +41,14 @@ def send():
         print(response.status_code, response.text)
         if response.status_code == 200:
             sequence += 1
+    print(time.time() - timer)
 
 
 print('Your address: ' + sender)
 while True:
     command = input('Enter the command ([send], [quit]): ')
     if command == 'send':
-        timer = time.time()
         send()
-        print(time.time() - timer)
     elif command == 'quit':
         print('Bye')
         sys.exit()
