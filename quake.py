@@ -21,7 +21,7 @@ from flask import Flask, jsonify, request
 class Quake:
     BASKET_SEND_TIME = 30  # sec
     SYNCHRONIZE_TIME = 2   # sec
-    BASKET_SIZE = 1  # txs
+    BASKET_SIZE = 30  # txs
     MAX_FAILED_TX_ATTEMPTS = 3
     PORT_DISTANCE = 1000
 
