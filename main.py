@@ -9,7 +9,7 @@ import hashlib
 import sys
 from Crypto.Cipher import PKCS1_OAEP
 from Crypto.PublicKey import RSA
-
+import os
 
 # port = sys.argv[1]
 port = 0
@@ -115,9 +115,10 @@ class mainNei:
 								#print ('\n')
 								#print ('Neighbours: ', list_neighbours)
 								time.sleep(1)
-							of = open('text{0}.log'.format(port),'a')
-							of.write(str(dic_neighbours)+' The length: '+str(len(dic_neighbours))+'\n\n')
-							of.close()
+							logfile = 'logs/text{0}.log'.format(port)
+							os.makedirs(logfile, exist_ok=True)
+							with open('logs/text{0}.log'.format(port),'a') as of:
+								of.write(str(dic_neighbours)+' The length: '+str(len(dic_neighbours))+'\n\n')
 				else:
 					pass
 			else:
@@ -194,9 +195,10 @@ class mainNei:
 								th_newNode.start()
 							elif code == 0:
 								#print ("The list is already full\n")
-								of = open('text{0}.log'.format(port),'a')
-								of.write(str(dic_neighbours)+' The length: '+str(len(dic_neighbours))+'\n\n')
-								of.close()
+								logfile = 'logs/text{0}.log'.format(port)
+								os.makedirs(logfile, exist_ok=True)
+								with open('text{0}.log'.format(port),'a') as of:
+									of.write(str(dic_neighbours)+' The length: '+str(len(dic_neighbours))+'\n\n')
 					conn.close()
 					break
 
